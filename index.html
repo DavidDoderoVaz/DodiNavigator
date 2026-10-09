@@ -8,6 +8,8 @@
 </head>
 <body>
 <div id="tabbar">
+  <select id="workspace-select" aria-label="Espacio de trabajo" title="Cambiar espacio"></select>
+  <button id="workspace-add" class="tabbar-action" data-icon="plus" aria-label="Crear espacio de trabajo" title="Crear espacio de trabajo"></button>
   <div id="tabs" role="tablist" aria-label="Pestañas"></div>
   <button id="newtab" data-icon="plus" aria-label="Nueva pestaña" title="Nueva pestaña (Ctrl+T)"></button>
 </div>
@@ -20,6 +22,7 @@
   <button id="star" class="icon" data-icon="star" aria-label="Guardar en favoritos" title="Guardar en favoritos"></button>
   <button id="downloads" class="icon" data-icon="download" aria-label="Descargas" title="Descargas (Ctrl+J)"></button>
   <button id="sidebtn" class="icon" data-icon="side" aria-label="Favoritos y notas" title="Favoritos y notas (Ctrl+B)"></button>
+  <button id="assistantbtn" class="icon" data-icon="sparkles" aria-label="Abrir Dodi Ayuda" title="Dodi Ayuda"></button>
   <button id="more" class="icon" data-icon="more" aria-label="Menú" title="Menú" aria-haspopup="menu"></button>
 </div>
 <div id="findbar" hidden>
@@ -40,6 +43,8 @@
     <div id="side-head" role="tablist">
       <button class="seg active" data-pane="fav" role="tab" aria-selected="true">Favoritos</button>
       <button class="seg" data-pane="notes" role="tab" aria-selected="false">Notas</button>
+      <button class="seg" data-pane="workspaces" role="tab" aria-selected="false">Espacios</button>
+      <button class="seg" data-pane="assistant" role="tab" aria-selected="false">Ayuda IA</button>
       <button id="side-close" class="icon sm" data-icon="close" aria-label="Cerrar panel"></button>
     </div>
     <div id="pane-fav" class="pane">
@@ -48,6 +53,27 @@
     </div>
     <div id="pane-notes" class="pane" hidden>
       <textarea id="notes" aria-label="Notas" placeholder="Escribe aquí tus notas. Se guardan solas."></textarea>
+    </div>
+    <div id="pane-workspaces" class="pane" hidden>
+      <h2>Espacios de trabajo</h2>
+      <p class="muted">Cada espacio recuerda sus pestañas y perfil.</p>
+      <div class="workspace-actions"><button id="workspace-save" class="btn">Guardar pestañas</button><button id="workspace-create" class="btn primary">Nuevo espacio</button></div>
+      <form id="workspace-form" hidden>
+        <input id="workspace-name" maxlength="32" placeholder="Nombre del espacio" aria-label="Nombre del espacio" autocomplete="off">
+        <button class="btn primary" type="submit">Crear</button><button class="btn" id="workspace-cancel" type="button">Cancelar</button>
+      </form>
+      <div id="workspace-list"></div>
+    </div>
+    <div id="pane-assistant" class="pane" hidden>
+      <div class="assistant-heading"><div><strong>Dodi Ayuda</strong><span id="assistant-status" class="hint">Comprobando IA local…</span></div><button id="assistant-refresh" class="btn">Revisar</button></div>
+      <div id="assistant-setup" class="assistant-setup" hidden></div>
+      <div class="assistant-quick"><button type="button" data-assistant-prompt="Resume esta página en cinco puntos claros." data-needs-page="true">Resumir página</button><button type="button" data-assistant-prompt="Explícame esta página con palabras sencillas." data-needs-page="true">Explicar página</button></div>
+      <div id="assistant-chat" aria-live="polite"></div>
+      <form id="assistant-form">
+        <label class="assistant-context"><input type="checkbox" id="assistant-page-context"> Incluir texto de la pestaña actual</label>
+        <textarea id="assistant-question" rows="3" maxlength="2000" placeholder="Pregunta algo o pide un resumen…" aria-label="Pregunta para Dodi Ayuda"></textarea>
+        <button id="assistant-send" class="btn primary" type="submit">Enviar</button>
+      </form>
     </div>
   </aside>
 </div>

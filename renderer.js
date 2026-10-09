@@ -19,7 +19,8 @@ const ICONS = {
   up: '<path d="M18 15l-6-6-6 6"/>',
   down: '<path d="M6 9l6 6 6-6"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>'
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  sparkles: '<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3ZM19 16l1 2.5 2.5 1-2.5 1L19 23l-1-2.5-2.5-1 2.5-1L19 16Z"/>'
 };
 const svg = (name, size) => '<svg width="' + (size || 20) + '" height="' + (size || 20) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
 document.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = svg(el.dataset.icon); });
@@ -33,6 +34,10 @@ const findInput = $('find-input');
 const findCount = $('find-count');
 const side = $('side');
 const notesEl = $('notes');
+const workspaceSelect = $('workspace-select');
+const workspaceListEl = $('workspace-list');
+let workspaces = [];
+let activeWorkspaceId = 'personal';
 
 let settings = { searchUrl: 'https://duckduckgo.com/?q=%s', homepage: '', restoreSession: true, translateTo: 'es', suspendInactiveTabsMinutes: 0 };
 let bookmarks = [];
@@ -311,11 +316,25 @@ function groupColor(name) {
 
 let saveTimer;
 function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(saveSession, 500); }
+function workspaceTabsSnapshot() {
+  const candidates = tabs.filter((tab) => !tab.private && (/^https?:\/\//i.test(tab.url) || internalName(tab.url) === 'newtab'));
+  const list = candidates.map((tab) => ({ url: internalName(tab.url) === 'newtab' ? '' : tab.url, pinned: tab.pinned, profile: tab.profile, group: tab.group }));
+  const activeTab = current();
+  return { tabs: list, active: activeTab ? candidates.findIndex((tab) => tab.id === activeTab.id) : -1 };
+}
 function saveSession() {
   const list = tabs.filter((t) => !t.private && internalName(t.url) !== 'newtab').map((t) => ({ url: t.url, pinned: t.pinned, profile: t.profile, group: t.group }));
   const cur = current();
   const idx = cur && !cur.private ? list.findIndex((x) => x.url === cur.url) : -1;
   browserApi.storeSet('session', { tabs: list, active: idx });
+  const workspace = workspaces.find((item) => item.id === activeWorkspaceId);
+  if (workspace) {
+    Object.assign(workspace, workspaceTabsSnapshot());
+    workspace.profile = settings.activeProfile || workspace.profile || 'personal';
+    browserApi.storeSet('workspaces', workspaces);
+    browserApi.storeSet('activeWorkspace', activeWorkspaceId);
+    renderWorkspaceUI();
+  }
 }
 
 /* ---------- barra de herramientas ---------- */
@@ -607,6 +626,125 @@ function toggleSide(show) {
   side.hidden = show === undefined ? !side.hidden : !show;
   $('sidebtn').classList.toggle('on', !side.hidden);
 }
+function selectSidePane(name, showSide) {
+  if (showSide !== false) toggleSide(true);
+  document.querySelectorAll('.seg').forEach((button) => {
+    const selected = button.dataset.pane === name;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-selected', String(selected));
+    $('pane-' + button.dataset.pane).hidden = !selected;
+  });
+  if (name === 'notes') notesEl.focus();
+}
+function safeWorkspaceProfile(profile) {
+  return typeof profile === 'string' && /^[a-z0-9][a-z0-9 _-]{0,23}$/i.test(profile) ? profile : 'personal';
+}
+function normalizeWorkspaces(items, legacySession) {
+  if (!Array.isArray(items)) items = [];
+  const clean = items.slice(0, 30).flatMap((item, index) => {
+    if (!item || typeof item !== 'object') return [];
+    const id = String(item.id || '').replace(/[^a-z0-9_-]/gi, '').slice(0, 40);
+    const name = String(item.name || '').trim().slice(0, 32);
+    if (!id || !name) return [];
+    const savedTabs = Array.isArray(item.tabs) ? item.tabs.filter((tab) => tab && (tab.url === '' || /^https?:\/\//i.test(tab.url))).slice(0, 100).map((tab) => ({
+      url: tab.url, pinned: !!tab.pinned, group: String(tab.group || '').slice(0, 24)
+    })) : [];
+    return [{ id, name, profile: safeWorkspaceProfile(item.profile), tabs: savedTabs, active: Math.max(0, Math.min(Number(item.active) || 0, Math.max(0, savedTabs.length - 1))) }];
+  });
+  if (!clean.length) {
+    const oldTabs = legacySession && Array.isArray(legacySession.tabs) ? legacySession.tabs : [];
+    clean.push({ id: 'personal', name: 'Personal', profile: safeWorkspaceProfile(settings.activeProfile), tabs: oldTabs.filter((tab) => tab && /^https?:\/\//i.test(tab.url)).slice(0, 100), active: Math.max(0, Number(legacySession && legacySession.active) || 0) });
+  }
+  return clean;
+}
+function renderWorkspaceUI() {
+  if (!workspaceSelect || !workspaceListEl) return;
+  workspaceSelect.textContent = '';
+  workspaces.forEach((workspace) => {
+    const option = document.createElement('option'); option.value = workspace.id; option.textContent = workspace.name;
+    workspaceSelect.appendChild(option);
+  });
+  workspaceSelect.value = activeWorkspaceId;
+  workspaceListEl.textContent = '';
+  workspaces.forEach((workspace) => {
+    const row = document.createElement('div'); row.className = 'workspace-row' + (workspace.id === activeWorkspaceId ? ' active' : '');
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'workspace-open';
+    const name = document.createElement('strong'); name.textContent = workspace.name;
+    const meta = document.createElement('small'); meta.textContent = `${workspace.tabs.length} pestaña${workspace.tabs.length === 1 ? '' : 's'} guardada${workspace.tabs.length === 1 ? '' : 's'}`;
+    open.append(name, meta); open.addEventListener('click', () => switchWorkspace(workspace.id));
+    const rename = document.createElement('button'); rename.type = 'button'; rename.className = 'workspace-mini'; rename.textContent = '✎'; rename.title = 'Renombrar espacio';
+    rename.addEventListener('click', () => showWorkspaceForm('rename', workspace));
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'workspace-mini'; remove.textContent = '×'; remove.title = 'Eliminar espacio'; remove.disabled = workspaces.length < 2;
+    remove.addEventListener('click', () => deleteWorkspace(workspace.id));
+    row.append(open, rename, remove); workspaceListEl.appendChild(row);
+  });
+}
+function showWorkspaceForm(mode, workspace) {
+  const form = $('workspace-form');
+  form.dataset.mode = mode;
+  form.dataset.workspaceId = workspace ? workspace.id : '';
+  $('workspace-name').value = workspace ? workspace.name : '';
+  form.querySelector('button[type="submit"]').textContent = mode === 'rename' ? 'Guardar' : 'Crear';
+  form.hidden = false; $('workspace-name').focus();
+}
+async function switchWorkspace(id, options) {
+  const target = workspaces.find((workspace) => workspace.id === id);
+  if (!target || target.id === activeWorkspaceId) return;
+  if (!(options && options.skipSave)) saveSession();
+  const hadPrivate = tabs.some((tab) => tab.private);
+  tabs.forEach((tab) => tab.wv.remove());
+  tabs.splice(0, tabs.length); active = null;
+  if (hadPrivate) browserApi.privateClosed();
+  activeWorkspaceId = target.id;
+  try { settings = await browserApi.setSettings({ activeProfile: target.profile }); }
+  catch { /* usar el perfil guardado si el cambio no responde */ }
+  renderWorkspaceUI();
+  const savedTabs = Array.isArray(target.tabs) ? target.tabs.filter((tab) => tab && (tab.url === '' || /^https?:\/\//i.test(tab.url))) : [];
+  if (!savedTabs.length) createTab({ profile: target.profile });
+  else {
+    savedTabs.forEach((tab) => createTab({ url: tab.url || pageUrl('newtab'), pinned: !!tab.pinned, group: tab.group, profile: target.profile, background: true }));
+    activate(tabs[Math.min(target.active || 0, tabs.length - 1)].id);
+  }
+  scheduleSave(); toast('Espacio abierto: ' + target.name);
+}
+function deleteWorkspace(id) {
+  if (workspaces.length < 2) return;
+  const wasActive = id === activeWorkspaceId;
+  if (wasActive) saveSession();
+  workspaces = workspaces.filter((workspace) => workspace.id !== id);
+  browserApi.storeSet('workspaces', workspaces);
+  if (wasActive) switchWorkspace(workspaces[0].id, { skipSave: true });
+  renderWorkspaceUI();
+}
+$('workspace-select').addEventListener('change', () => switchWorkspace(workspaceSelect.value));
+$('workspace-add').addEventListener('click', () => { selectSidePane('workspaces'); showWorkspaceForm('create'); });
+$('workspace-create').addEventListener('click', () => showWorkspaceForm('create'));
+$('workspace-cancel').addEventListener('click', () => { $('workspace-form').hidden = true; });
+$('workspace-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const name = $('workspace-name').value.trim().slice(0, 32);
+  if (!name) { $('workspace-name').focus(); return; }
+  const mode = $('workspace-form').dataset.mode;
+  if (mode === 'rename') {
+    const item = workspaces.find((workspace) => workspace.id === $('workspace-form').dataset.workspaceId);
+    if (item) item.name = name;
+  } else {
+    const id = 'ws-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const profile = ('espacio-' + id.slice(3)).slice(0, 24);
+    workspaces.push({ id, name, profile, tabs: [], active: 0 });
+    const target = workspaces[workspaces.length - 1];
+    browserApi.storeSet('workspaces', workspaces);
+    $('workspace-form').hidden = true; $('workspace-name').value = '';
+    renderWorkspaceUI(); switchWorkspace(target.id); return;
+  }
+  $('workspace-form').hidden = true; $('workspace-name').value = '';
+  browserApi.storeSet('workspaces', workspaces); renderWorkspaceUI();
+});
+$('workspace-save').addEventListener('click', () => { saveSession(); toast('Pestañas guardadas en este espacio.'); });
+document.querySelectorAll('.seg').forEach((button) => button.addEventListener('click', () => selectSidePane(button.dataset.pane, false)));
+$('assistantbtn').addEventListener('click', () => selectSidePane('assistant'));
+let notesTimer;
+notesEl.addEventListener('input', () => { clearTimeout(notesTimer); notesTimer = setTimeout(() => browserApi.storeSet('notes', notesEl.value), 500); });
 document.querySelectorAll('.seg').forEach((b) => b.addEventListener('click', () => {
   document.querySelectorAll('.seg').forEach((x) => { const on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-selected', String(on)); });
   $('pane-fav').hidden = b.dataset.pane !== 'fav';
@@ -615,6 +753,73 @@ document.querySelectorAll('.seg').forEach((b) => b.addEventListener('click', () 
 }));
 let notesTimer;
 notesEl.addEventListener('input', () => { clearTimeout(notesTimer); notesTimer = setTimeout(() => browserApi.storeSet('notes', notesEl.value), 500); });
+
+let assistantHistory = [];
+let assistantReady = false;
+function addAssistantMessage(text, kind) {
+  const bubble = document.createElement('div'); bubble.className = 'assistant-message' + (kind ? ' ' + kind : '');
+  bubble.textContent = text;
+  $('assistant-chat').appendChild(bubble);
+  $('assistant-chat').scrollTop = $('assistant-chat').scrollHeight;
+  return bubble;
+}
+async function refreshAssistantStatus() {
+  $('assistant-status').textContent = 'Comprobando IA local…';
+  $('assistant-refresh').disabled = true;
+  try {
+    const status = await browserApi.assistantStatus();
+    assistantReady = !!(status && status.available && status.installed);
+    $('assistant-status').textContent = status && status.message || 'No se pudo consultar el asistente.';
+    $('assistant-setup').hidden = assistantReady;
+    $('assistant-setup').innerHTML = status && status.available
+      ? `Para habilitarlo, descarga el modelo desde <a href="https://ollama.com/library/qwen2.5:1.5b-instruct" target="_blank" rel="noreferrer">Ollama</a> (aprox. 986 MB) y ejecuta <code>ollama run qwen2.5:1.5b-instruct</code>. Las respuestas se procesan en tu equipo.`
+      : `Instala y abre <a href="https://ollama.com/download" target="_blank" rel="noreferrer">Ollama</a>. Después ejecuta <code>ollama run qwen2.5:1.5b-instruct</code> para descargar el modelo. Las respuestas se procesan en tu equipo.`;
+    $('assistant-question').disabled = !assistantReady;
+    $('assistant-send').disabled = !assistantReady;
+    document.querySelectorAll('.assistant-quick button').forEach((button) => { button.disabled = !assistantReady; });
+  } catch {
+    assistantReady = false;
+    $('assistant-status').textContent = 'No se pudo consultar la IA local.';
+    $('assistant-setup').hidden = false;
+    $('assistant-setup').textContent = 'Abre Ollama y pulsa Revisar para conectarlo.';
+    $('assistant-question').disabled = true; $('assistant-send').disabled = true;
+  } finally { $('assistant-refresh').disabled = false; }
+}
+async function askAssistant(question) {
+  const text = String(question || '').trim().slice(0, 2000);
+  if (!text) { $('assistant-question').focus(); return; }
+  if (!assistantReady) { addAssistantMessage('Primero instala y abre Ollama, y descarga el modelo que aparece arriba.', 'error'); return; }
+  $('assistant-question').value = '';
+  addAssistantMessage(text, 'user');
+  const contextRequested = $('assistant-page-context').checked;
+  let pageText = '';
+  if (contextRequested) {
+    const tab = current();
+    if (tab && /^https?:\/\//i.test(tab.url)) {
+      try { pageText = await tab.wv.executeJavaScript('document.body ? document.body.innerText.slice(0, 10000) : ""'); }
+      catch { addAssistantMessage('No pude leer el contenido de esa página. Puedes copiar el texto en tu pregunta.', 'error'); return; }
+    } else { addAssistantMessage('Abre una página web para compartir su texto con el asistente.', 'error'); return; }
+  }
+  const pending = addAssistantMessage('Pensando…');
+  $('assistant-send').disabled = true;
+  try {
+    const result = await browserApi.assistantAsk({ question: text, history: assistantHistory.slice(-8), pageText });
+    pending.remove();
+    if (!result || !result.ok) { addAssistantMessage(result && result.message || 'No se pudo obtener respuesta.', 'error'); return; }
+    addAssistantMessage(result.answer, 'assistant');
+    assistantHistory.push({ role: 'user', content: text }, { role: 'assistant', content: result.answer });
+    if (assistantHistory.length > 16) assistantHistory = assistantHistory.slice(-16);
+  } catch {
+    pending.remove(); addAssistantMessage('No se pudo conectar con Ollama. Comprueba que siga abierto.', 'error');
+  } finally { $('assistant-send').disabled = !assistantReady; }
+}
+$('assistant-refresh').addEventListener('click', refreshAssistantStatus);
+$('assistant-form').addEventListener('submit', (event) => { event.preventDefault(); askAssistant($('assistant-question').value); });
+document.querySelectorAll('.assistant-quick button').forEach((button) => button.addEventListener('click', () => {
+  if (button.dataset.needsPage === 'true') $('assistant-page-context').checked = true;
+  askAssistant(button.dataset.assistantPrompt);
+}));
+refreshAssistantStatus();
 
 /* ---------- comandos (menú, atajos y botones) ---------- */
 
@@ -660,10 +865,19 @@ browserApi.onCommand((cmd, arg) => { const f = commands[cmd]; if (f) f(arg); });
 /* ---------- arranque ---------- */
 
 (async function init() {
-  const [s, bm, notes, session, dls] = await Promise.all([
-    browserApi.getSettings(), browserApi.storeGet('bookmarks'), browserApi.storeGet('notes'), browserApi.storeGet('session'), browserApi.getDownloads()
+  const [s, bm, notes, session, dls, savedWorkspaces, savedWorkspaceId] = await Promise.all([
+    browserApi.getSettings(), browserApi.storeGet('bookmarks'), browserApi.storeGet('notes'), browserApi.storeGet('session'), browserApi.getDownloads(), browserApi.storeGet('workspaces'), browserApi.storeGet('activeWorkspace')
   ]);
   settings = s || settings;
+  workspaces = normalizeWorkspaces(savedWorkspaces, session);
+  activeWorkspaceId = workspaces.some((workspace) => workspace.id === savedWorkspaceId) ? savedWorkspaceId : workspaces[0].id;
+  const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId);
+  if (activeWorkspace && activeWorkspace.profile !== settings.activeProfile) {
+    try { settings = await browserApi.setSettings({ activeProfile: activeWorkspace.profile }); } catch { /* mantiene los ajustes actuales */ }
+  }
+  renderWorkspaceUI();
+  browserApi.storeSet('workspaces', workspaces);
+  browserApi.storeSet('activeWorkspace', activeWorkspaceId);
   bookmarks = Array.isArray(bm) ? bm : [];
   if (!bookmarks.length) { // migrar favoritos de la versión 1.0
     try { const old = JSON.parse(localStorage.getItem('dodi.bookmarks') || '[]'); if (Array.isArray(old)) { bookmarks = old; saveBookmarks(); } } catch (e) { /* nada */ }
@@ -685,8 +899,12 @@ browserApi.onCommand((cmd, arg) => { const f = commands[cmd]; if (f) f(arg); });
   });
 
   let restored = false;
-  if (settings.restoreSession && session && Array.isArray(session.tabs) && session.tabs.length) {
-    session.tabs.filter((x) => x && allowedUrl(x.url)).forEach((x) => createTab({ url: x.url, pinned: !!x.pinned, profile: x.profile, group: x.group, background: true }));
+  const savedWorkspaceTabs = settings.restoreSession && activeWorkspace && Array.isArray(activeWorkspace.tabs) ? activeWorkspace.tabs : [];
+  if (savedWorkspaceTabs.length) {
+    savedWorkspaceTabs.forEach((item) => createTab({ url: item.url, pinned: !!item.pinned, profile: activeWorkspace.profile, group: item.group, background: true }));
+    activate(tabs[Math.min(activeWorkspace.active || 0, tabs.length - 1)].id); restored = true;
+  } else if (!Array.isArray(savedWorkspaces) && settings.restoreSession && session && Array.isArray(session.tabs) && session.tabs.length) {
+    session.tabs.filter((item) => item && allowedUrl(item.url)).forEach((item) => createTab({ url: item.url, pinned: !!item.pinned, profile: item.profile, group: item.group, background: true }));
     if (tabs.length) { activate((tabs[session.active] || tabs[tabs.length - 1]).id); restored = true; }
   }
   if (!restored) createTab();

@@ -11,6 +11,9 @@ button { font-family: inherit; cursor: pointer; }
 .muted { color: var(--muted); font-size: 14px; }
 
 #tabbar { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 22px; padding-right: calc(10px + max(0px, 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))); background: var(--tabstrip); height: 52px; flex: none; -webkit-app-region: drag; user-select: none; }
+#workspace-select { width: 140px; height: 34px; flex: none; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bar); color: var(--text); font: inherit; font-size: 13px; -webkit-app-region: no-drag; }
+.tabbar-action { width: 32px; height: 32px; flex: none; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 9px; background: transparent; color: var(--muted); -webkit-app-region: no-drag; }
+.tabbar-action:hover { background: var(--raised); color: var(--text); }
 #tabs { display: flex; align-items: center; gap: 7px; flex: 1 1 0; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--line) transparent; -webkit-app-region: no-drag; }
 #tabs::-webkit-scrollbar { height: 4px; }
 #tabs::-webkit-scrollbar-track { background: transparent; }
@@ -73,9 +76,9 @@ body.private-mode #toolbar { box-shadow: inset 0 -2px 0 #A78BFA; }
 #views webview { flex: 1; width: 100%; height: 100%; }
 #views webview.hidden { display: none; }
 
-#side { width: 300px; flex: none; display: flex; flex-direction: column; background: var(--bar); border-left: 1px solid var(--line); }
-#side-head { display: flex; align-items: center; gap: 4px; padding: 8px; border-bottom: 1px solid var(--line); }
-.seg { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 13px; }
+#side { width: 360px; flex: none; display: flex; flex-direction: column; background: var(--bar); border-left: 1px solid var(--line); }
+#side-head { display: flex; align-items: center; gap: 3px; padding: 6px; border-bottom: 1px solid var(--line); }
+.seg { height: 32px; padding: 0 7px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; flex: 1; white-space: nowrap; }
 .seg.active { background: var(--raised); color: var(--text); }
 #side-close { margin-left: auto; }
 .pane { flex: 1; padding: 12px; overflow: auto; display: flex; flex-direction: column; min-height: 0; }
@@ -86,6 +89,33 @@ body.private-mode #toolbar { box-shadow: inset 0 -2px 0 #A78BFA; }
 .fav-rm { width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 16px; }
 #notes { flex: 1; width: 100%; resize: none; padding: 10px; border: 2px solid transparent; border-radius: 10px; background: var(--strip); color: var(--text); font: inherit; font-size: 14px; line-height: 1.5; }
 #notes:focus { border-color: var(--accent-ink); outline: none; }
+.pane > h2 { margin: 4px 0 6px; color: var(--text); font-size: 17px; }
+.workspace-actions { display: flex; gap: 8px; margin: 8px 0 14px; }
+.workspace-actions .btn { flex: 1; padding: 0 8px; font-size: 13px; }
+#workspace-form { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+#workspace-form input { width: 100%; height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--strip); color: var(--text); font: inherit; }
+#workspace-list { display: flex; flex-direction: column; gap: 6px; }
+.workspace-row { display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; }
+.workspace-open { flex: 1; min-width: 0; padding: 7px; border: 0; border-radius: 7px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.workspace-open:hover, .workspace-row.active .workspace-open { background: var(--raised); }
+.workspace-open small { display: block; margin-top: 2px; color: var(--muted); }
+.workspace-mini { width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); }
+.workspace-mini:hover { background: var(--raised); color: var(--text); }
+.assistant-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.assistant-heading strong { display: block; }
+.assistant-heading .hint { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+.assistant-setup { margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.assistant-setup a { color: var(--accent-ink); }
+.assistant-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.assistant-quick button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); color: var(--text); font: inherit; font-size: 12px; }
+#assistant-chat { flex: 1; min-height: 80px; margin: 10px 0; overflow-y: auto; }
+.assistant-message { max-width: 95%; margin: 0 0 9px; padding: 9px 11px; border-radius: 12px; background: var(--raised); color: var(--text); font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.assistant-message.user { margin-left: auto; background: color-mix(in srgb, var(--accent) 24%, var(--raised)); }
+.assistant-message.error { color: #ff9c9c; }
+#assistant-form { display: flex; flex-direction: column; gap: 8px; }
+.assistant-context { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+#assistant-question { min-height: 66px; max-height: 160px; resize: vertical; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--strip); color: var(--text); font: inherit; font-size: 13px; }
+#assistant-send { align-self: flex-end; }
 
 #menu { position: fixed; z-index: 50; min-width: 250px; padding: 6px; background: var(--bar); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 30px rgba(0, 0, 0, .35); }
 .mi { display: flex; justify-content: space-between; gap: 24px; width: 100%; padding: 8px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font-size: 14px; text-align: left; }
