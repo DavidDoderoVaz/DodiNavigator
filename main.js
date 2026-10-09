@@ -274,8 +274,10 @@ async function initAdblock() {
   }
 }
 async function loadAdblockEngine(ElectronBlocker) {
-  const cachePath = path.join(app.getPath('userData'), 'adblock-engine.bin');
+  const userData = app.getPath('userData');
+  const cachePath = path.join(userData, 'adblock-engine-v2.bin');
   const stalePath = `${cachePath}.stale`;
+  const legacyCachePath = path.join(userData, 'adblock-engine.bin');
   const caching = { path: cachePath, read: fs.promises.readFile, write: fs.promises.writeFile };
   let staleAvailable = false;
 
@@ -293,6 +295,12 @@ async function loadAdblockEngine(ElectronBlocker) {
       staleAvailable = true;
     } catch (staleError) {
       if (staleError.code !== 'ENOENT') throw staleError;
+      try {
+        await fs.promises.copyFile(legacyCachePath, stalePath);
+        staleAvailable = true;
+      } catch (legacyError) {
+        if (legacyError.code !== 'ENOENT') throw legacyError;
+      }
     }
   }
 
