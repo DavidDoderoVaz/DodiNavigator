@@ -220,7 +220,7 @@ function setupProfileSession(partition) {
   setupDownloads(ses);
   setupPermissions(ses, partition);
   if (blocker) {
-    try { if (settings().adblock) blocker.enableBlockingInSession(ses); }
+    try { if (settings().adblock) enableBlockingInSession(ses); }
     catch (e) {
       blockerError = e.message || 'No se pudo activar el filtro en este perfil.';
       console.error('[Dodi adblock] No se pudo activar el filtro en una sesión:', blockerError);
@@ -269,13 +269,38 @@ async function initAdblock() {
     broadcast('settings', publicSettings());
   }
 }
+// Ghostery's current Electron wrapper expects APIs added in Electron 35.
+// Keep Electron 33 compatible by adapting its older preload-list methods.
+function enableBlockingInSession(ses) {
+  if (typeof ses.registerPreloadScript !== 'function'
+      && typeof ses.getPreloads === 'function'
+      && typeof ses.setPreloads === 'function') {
+    const registered = new Map();
+    ses.registerPreloadScript = ({ filePath }) => {
+      const id = `dodi-adblock-${crypto.randomUUID()}`;
+      const preloads = ses.getPreloads();
+      if (!preloads.includes(filePath)) ses.setPreloads([...preloads, filePath]);
+      registered.set(id, filePath);
+      return id;
+    };
+    ses.unregisterPreloadScript = (id) => {
+      const filePath = registered.get(id);
+      if (!filePath) return;
+      registered.delete(id);
+      if (![...registered.values()].includes(filePath)) {
+        ses.setPreloads(ses.getPreloads().filter((item) => item !== filePath));
+      }
+    };
+  }
+  return blocker.enableBlockingInSession(ses);
+}
 function applyAdblock() {
   if (!blocker) return;
   const errors = [];
   initializedPartitions.forEach((p) => {
     const ses = session.fromPartition(p);
     try {
-      if (settings().adblock) blocker.enableBlockingInSession(ses);
+      if (settings().adblock) enableBlockingInSession(ses);
       else blocker.disableBlockingInSession(ses);
     } catch (e) { errors.push(e.message || 'Error al aplicar el filtro.'); }
   });
@@ -289,6 +314,7 @@ function localDateKey() {
 }
 function browserStats() {
   if (localDateKey() !== statsDate) { statsDate = localDateKey(); blockedRequestsToday = 0; }
+  if (typeof app.getAppMetrics !== 'function') throw new Error('Esta versión de Electron no ofrece métricas del sistema.');
   const metrics = app.getAppMetrics();
   const workingSetKb = metrics.reduce((sum, metric) => sum + (metric.memory && metric.memory.workingSetSize || 0), 0);
   const cpuPercent = metrics.reduce((sum, metric) => sum + (metric.cpu && metric.cpu.percentCPUUsage || 0), 0);
@@ -567,7 +593,16 @@ ipcMain.handle('permissions:clear', (e) => {
   permCache.clear();
   store.set('permissions', {});
 });
-ipcMain.handle('stats:get', (e) => (ok(e) ? browserStats() : null));
+ipcMain.handle('stats:get', (e) => {
+  try {
+    if (!ok(e)) return { metricsError: 'No se autorizó la lectura de métricas.' };
+    return browserStats();
+  } catch (error) {
+    const message = error && error.message ? error.message : 'Error desconocido';
+    console.error('[Dodi metrics] No se pudieron leer las métricas:', message);
+    return { metricsError: message };
+  }
+});
 
 /* ---------- extensiones compatibles ---------- */
 

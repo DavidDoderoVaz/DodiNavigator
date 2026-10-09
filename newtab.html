@@ -136,9 +136,11 @@
       return;
     }
     D.getStats().then(function (stats) {
-      if (!stats) {
-        $('memory-use').textContent = 'Error'; $('cpu-use').textContent = 'Error'; $('blocked-count').textContent = 'Error';
-        $('blocked-note').textContent = 'El proceso principal no respondió a las métricas.';
+      if (!stats || stats.metricsError) {
+        $('memory-use').textContent = '—'; $('cpu-use').textContent = '—'; $('blocked-count').textContent = '—';
+        $('blocked-note').textContent = stats && stats.metricsError
+          ? 'Métricas no disponibles: ' + stats.metricsError
+          : 'El proceso principal no respondió a las métricas.';
         return;
       }
       $('memory-use').textContent = stats.memoryMiB.toLocaleString() + ' MB';
@@ -148,14 +150,14 @@
         ? (stats.adblockError ? 'Bloqueador: ' + stats.adblockError : 'El bloqueador no está disponible ahora')
         : (!stats.adblockEnabled ? 'Bloqueador desactivado o con error; total de hoy' : 'Solicitudes bloqueadas por anuncios y rastreadores');
     }).catch(function () {
-      $('memory-use').textContent = 'Error';
-      $('cpu-use').textContent = 'Error';
-      $('blocked-count').textContent = 'Error';
-      $('blocked-note').textContent = 'No se pudieron leer las métricas.';
+      $('memory-use').textContent = '—';
+      $('cpu-use').textContent = '—';
+      $('blocked-count').textContent = '—';
+      $('blocked-note').textContent = 'No se pudieron consultar las métricas. Cierra y vuelve a abrir DodiNavigator.';
     });
   }
   updateStats();
-  setInterval(updateStats, 5000);
+  setInterval(updateStats, 15000);
 })();
 </script>
 </body>
