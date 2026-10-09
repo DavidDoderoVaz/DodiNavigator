@@ -30,6 +30,13 @@
   form.new button { height: 40px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--raised); color: var(--text); font: inherit; cursor: pointer; }
   form.new button.ok { background: var(--accent); color: var(--on-accent); }
   #err { min-height: 18px; color: var(--muted); font-size: 13px; }
+  .dashboard { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); width: min(1320px, calc(100% - 40px)); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .dash-card { min-height: 112px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--bar) 94%, transparent); }
+  .dash-title { margin: 0 0 14px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .dash-value { margin: 0; color: var(--accent-ink); font-size: 25px; font-weight: 700; }
+  .dash-note { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+  @media (max-width: 760px) { .dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); bottom: 10px; gap: 8px; } .dash-card { min-height: 96px; padding: 12px; } }
+  @media (max-height: 620px) { .dashboard { position: static; transform: none; width: min(700px, 100%); margin-top: auto; } body { justify-content: flex-start; gap: 20px; } }
 </style>
 </head>
 <body>
@@ -43,6 +50,28 @@
     <button type="button" id="n-cancel">Cancelar</button>
   </form>
   <div id="err" role="status" aria-live="polite"></div>
+  <section class="dashboard" aria-label="Estadísticas del navegador">
+    <article class="dash-card">
+      <h2 class="dash-title">Memoria aproximada</h2>
+      <p class="dash-value" id="memory-use">—</p>
+      <p class="dash-note">Uso combinado de los procesos del navegador</p>
+    </article>
+    <article class="dash-card">
+      <h2 class="dash-title">CPU</h2>
+      <p class="dash-value" id="cpu-use">—</p>
+      <p class="dash-note">Actividad aproximada reciente</p>
+    </article>
+    <article class="dash-card">
+      <h2 class="dash-title">Protección hoy</h2>
+      <p class="dash-value" id="blocked-count">—</p>
+      <p class="dash-note" id="blocked-note">Solicitudes bloqueadas por anuncios y rastreadores</p>
+    </article>
+    <article class="dash-card vpn-card">
+      <h2 class="dash-title">VPN</h2>
+      <p class="dash-value">No configurada</p>
+      <p class="dash-note">Una VPN real necesita un proveedor o una conexión VPN del sistema.</p>
+    </article>
+  </section>
 <script src="theme.js"></script>
 <script>
 (function () {
@@ -97,6 +126,20 @@
     });
   });
   D.getShortcuts().then(function (r) { list = r; render(); });
+
+  function updateStats() {
+    D.getStats().then(function (stats) {
+      if (!stats) return;
+      $('memory-use').textContent = stats.memoryMiB.toLocaleString() + ' MB';
+      $('cpu-use').textContent = stats.cpuPercent.toLocaleString() + '%';
+      $('blocked-count').textContent = stats.blockedRequestsToday.toLocaleString();
+      $('blocked-note').textContent = !stats.adblockAvailable
+        ? 'El bloqueador no está disponible ahora'
+        : (!stats.adblockEnabled ? 'Bloqueador desactivado; se conserva el total de hoy' : 'Solicitudes bloqueadas por anuncios y rastreadores');
+    }).catch(function () {});
+  }
+  updateStats();
+  setInterval(updateStats, 5000);
 })();
 </script>
 </body>

@@ -35,6 +35,7 @@ Para Mac o Linux: `npm run dist:mac` / `npm run dist:linux` (hay que ejecutarlos
 - Menú contextual (clic derecho): abrir enlace en pestaña, copiar, guardar imagen, inspeccionar
 - Los permisos de cámara, micrófono, ubicación y notificaciones se piden y recuerdan por sitio; se pueden revocar en Ajustes
 - Extensiones compatibles: se añaden desde Ajustes seleccionando una carpeta con `manifest.json`; se cargan en los perfiles persistentes
+- Estadísticas en la nueva pestaña: memoria y CPU aproximados, además de solicitudes bloqueadas durante el día
 - Opción para borrar historial, cookies, permisos y caché al cerrar
 - Aviso cuando se bloquea una conexión por un error de certificado; no permite saltarse la protección TLS
 
@@ -54,4 +55,6 @@ Ghostery usa listas de filtros públicas para bloquear anuncios y rastreadores. 
 El repositorio para actualizaciones ya está definido en GitHub. Falta integrar el actualizador y publicar versiones en GitHub Releases antes de que las instalaciones puedan actualizarse automáticamente.
 
 Electron admite solo una parte de las API de extensiones de Chrome. DodiNavigator carga extensiones desempaquetadas (carpetas), no instala `.crx` ni directamente desde Chrome Web Store; algunas extensiones y sus botones pueden no funcionar.
+
+DodiNavigator todavía no incluye una VPN. Para ofrecer una conexión VPN real hay que integrar un proveedor o una conexión VPN configurada en el sistema; el indicador de la nueva pestaña deja claro que no está configurada.
 

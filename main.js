@@ -31,6 +31,8 @@ let store = null;
 let historyStore = null;
 let blocker = null;
 let downloads = [];
+let statsDate = '';
+let blockedRequestsToday = 0;
 const liveItems = new Map();
 const subs = new Set();
 const initializedPartitions = new Set();
@@ -244,6 +246,16 @@ async function initAdblock() {
       read: fs.promises.readFile,
       write: fs.promises.writeFile
     });
+    const onBeforeRequest = blocker.onBeforeRequest.bind(blocker);
+    blocker.onBeforeRequest = (details, callback) => onBeforeRequest(details, (response) => {
+      if (response && response.cancel) {
+        const today = localDateKey();
+        if (today !== statsDate) { statsDate = today; blockedRequestsToday = 0; }
+        blockedRequestsToday++;
+        if (blockedRequestsToday % 20 === 0) store.set('browserStats', { date: statsDate, blockedRequests: blockedRequestsToday });
+      }
+      callback(response);
+    });
     applyAdblock();
     broadcast('settings', publicSettings());
   } catch (e) {
@@ -259,6 +271,24 @@ function applyAdblock() {
       else blocker.disableBlockingInSession(ses);
     } catch (e) { /* ignorar */ }
   });
+}
+
+function localDateKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+function browserStats() {
+  if (localDateKey() !== statsDate) { statsDate = localDateKey(); blockedRequestsToday = 0; }
+  const metrics = app.getAppMetrics();
+  const workingSetKb = metrics.reduce((sum, metric) => sum + (metric.memory && metric.memory.workingSetSize || 0), 0);
+  const cpuPercent = metrics.reduce((sum, metric) => sum + (metric.cpu && metric.cpu.percentCPUUsage || 0), 0);
+  return {
+    memoryMiB: Math.round(workingSetKb / 1024),
+    cpuPercent: Math.round(cpuPercent),
+    blockedRequestsToday,
+    adblockAvailable: !!blocker,
+    adblockEnabled: !!blocker && !!settings().adblock
+  };
 }
 
 /* ---------- ventana ---------- */
@@ -517,6 +547,7 @@ ipcMain.handle('permissions:clear', (e) => {
   permCache.clear();
   store.set('permissions', {});
 });
+ipcMain.handle('stats:get', (e) => (ok(e) ? browserStats() : null));
 
 /* ---------- extensiones compatibles ---------- */
 
@@ -642,6 +673,9 @@ if (!app.requestSingleInstanceLock()) {
     app.setAppUserModelId('com.dodi.navigator');
     store = makeStore('data.json', {});
     historyStore = makeStore('history.json', { items: [] });
+    const savedStats = store.get('browserStats') || {};
+    statsDate = localDateKey();
+    blockedRequestsToday = savedStats.date === statsDate ? Number(savedStats.blockedRequests) || 0 : 0;
     downloads = (store.get('downloads') || []).map((d) => (d.state === 'progressing' || d.state === 'paused' ? { ...d, state: 'interrupted' } : d));
     (settings().profiles || ['personal']).forEach((profile) => setupProfileSession(profilePartition(profile)));
     setupProfileSession(profilePartition(settings().activeProfile));
@@ -654,6 +688,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   let quitCleanupStarted = false;
   app.on('before-quit', (e) => {
+    if (store) store.set('browserStats', { date: statsDate, blockedRequests: blockedRequestsToday });
     if (store && settings().clearOnExit && !quitCleanupStarted) {
       e.preventDefault();
       quitCleanupStarted = true;
