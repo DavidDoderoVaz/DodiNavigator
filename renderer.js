@@ -154,6 +154,7 @@ function activate(id) {
     tab.wv.src = tab.url;
   }
   renderTabs();
+  revealActiveTab();
   updateToolbar();
   scheduleSave();
 }
@@ -237,6 +238,7 @@ function tabMenu(t) {
 
 function renderTabs() {
   if (dragId !== null) return;
+  const previousScrollLeft = tabsEl.scrollLeft;
   tabsEl.textContent = '';
   tabs.forEach((t) => {
     const el = document.createElement('div');
@@ -276,7 +278,27 @@ function renderTabs() {
     el.append(lead, title, close);
     tabsEl.appendChild(el);
   });
+  tabsEl.scrollLeft = previousScrollLeft;
 }
+
+function revealActiveTab() {
+  requestAnimationFrame(() => {
+    const activeEl = tabsEl.querySelector('.tab.active');
+    if (!activeEl) return;
+    const tabRect = activeEl.getBoundingClientRect();
+    const stripRect = tabsEl.getBoundingClientRect();
+    const visibleRight = stripRect.left + tabsEl.clientWidth;
+    if (tabRect.left < stripRect.left) tabsEl.scrollLeft -= stripRect.left - tabRect.left;
+    else if (tabRect.right > visibleRight) tabsEl.scrollLeft += tabRect.right - visibleRight;
+  });
+}
+
+tabsEl.addEventListener('wheel', (event) => {
+  if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+    tabsEl.scrollLeft += event.deltaY;
+    event.preventDefault();
+  }
+}, { passive: false });
 
 function groupColor(name) {
   const colors = ['#3DDBB0', '#6AA9FF', '#FF9F5A', '#C792EA', '#F2C94C', '#FF7B91'];
