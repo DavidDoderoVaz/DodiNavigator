@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Descargas</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="internal.css">
+</head>
+<body>
+<main>
+  <h1>Descargas</h1>
+  <div class="top"><button id="clear" class="btn">Borrar lista</button></div>
+  <p id="empty" class="muted" hidden>Aún no has descargado nada.</p>
+  <div id="list"></div>
+</main>
+<script src="theme.js"></script>
+<script>
+(function () {
+  var D = window.dodi;
+  var list = document.getElementById('list');
+  var STATES = { progressing: 'Descargando…', paused: 'En pausa', completed: 'Completada', cancelled: 'Cancelada', interrupted: 'Interrumpida' };
+  function size(n) {
+    if (!n || n < 0) return '';
+    var u = ['B', 'KB', 'MB', 'GB'], i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return n.toFixed(i ? 1 : 0) + ' ' + u[i];
+  }
+  function btn(text, fn, cls) {
+    var b = document.createElement('button');
+    b.className = 'btn ' + (cls || ''); b.textContent = text; b.addEventListener('click', fn); return b;
+  }
+  function render(items) {
+    list.textContent = '';
+    document.getElementById('empty').hidden = items.length > 0;
+    items.forEach(function (d) {
+      var row = document.createElement('div'); row.className = 'item';
+      var g = document.createElement('div'); g.className = 'grow';
+      var t = document.createElement('span'); t.className = 't'; t.textContent = d.name;
+      var s = document.createElement('span'); s.className = 's';
+      var info = STATES[d.state] || d.state;
+      if (d.state === 'progressing' && d.total > 0) info += ' ' + size(d.received) + ' de ' + size(d.total);
+      else if (d.state === 'completed') info += ' · ' + size(d.total || d.received);
+      s.textContent = info;
+      g.append(t, s);
+      if (d.state === 'progressing' && d.total > 0) {
+        var p = document.createElement('progress'); p.max = d.total; p.value = d.received;
+        p.setAttribute('aria-label', 'Progreso de ' + d.name); g.appendChild(p);
+      }
+      row.appendChild(g);
+      if (d.state === 'completed') { row.appendChild(btn('Abrir', function () { D.openDownload(d.id); }, 'primary')); row.appendChild(btn('Mostrar en carpeta', function () { D.showDownload(d.id); })); }
+      if (d.state === 'progressing') row.appendChild(btn('Pausar', function () { D.pauseDownload(d.id); }));
+      if (d.state === 'paused') row.appendChild(btn('Continuar', function () { D.resumeDownload(d.id); }, 'primary'));
+      if (d.state === 'progressing' || d.state === 'paused') row.appendChild(btn('Cancelar', function () { D.cancelDownload(d.id); }, 'danger'));
+      list.appendChild(row);
+    });
+  }
+  D.getDownloads().then(render);
+  D.onDownloads(render);
+  document.getElementById('clear').addEventListener('click', function () { D.clearDownloads(); });
+})();
+</script>
+</body>
+</html>

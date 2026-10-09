@@ -1,0 +1,560 @@
+const { app, BrowserWindow, Menu, session, ipcMain, shell, dialog, clipboard } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const { fileURLToPath } = require('url');
+
+const PARTITION = 'persist:dodi';
+const PRIVATE_PARTITION = 'dodi-private';
+const ENGINES = {
+  duckduckgo: 'https://duckduckgo.com/?q=%s',
+  google: 'https://www.google.com/search?q=%s',
+  bing: 'https://www.bing.com/search?q=%s',
+  brave: 'https://search.brave.com/search?q=%s'
+};
+const DEFAULT_SETTINGS = {
+  searchEngine: 'duckduckgo', homepage: '', accent: '#3DDBB0', theme: 'dark',
+  adblock: true, restoreSession: true, translateTo: 'es', clearOnExit: false, activeProfile: 'personal', profiles: ['personal']
+};
+const DEFAULT_SHORTCUTS = [
+  { title: 'Wikipedia', url: 'https://www.wikipedia.org/' },
+  { title: 'YouTube', url: 'https://www.youtube.com/' },
+  { title: 'GitHub', url: 'https://github.com/' },
+  { title: 'Mapas', url: 'https://www.openstreetmap.org/' },
+  { title: 'Noticias', url: 'https://news.ycombinator.com/' }
+];
+const UI_STORE_KEYS = ['bookmarks', 'notes', 'session'];
+const RISKY_EXT = /\.(exe|msi|bat|cmd|com|scr|ps1|vbs|js|jse|wsf|lnk|jar|reg|hta)$/i;
+
+let win = null;
+let store = null;
+let historyStore = null;
+let blocker = null;
+let downloads = [];
+const liveItems = new Map();
+const subs = new Set();
+const initializedPartitions = new Set();
+
+/* ---------- almacenamiento en JSON (carpeta de datos del usuario) ---------- */
+
+function makeStore(file, defaults) {
+  const p = path.join(app.getPath('userData'), file);
+  let data = { ...defaults };
+  let timer = null;
+  try { data = { ...defaults, ...JSON.parse(fs.readFileSync(p, 'utf8')) }; } catch (e) { /* primer arranque */ }
+  const write = () => { try { fs.writeFileSync(p, JSON.stringify(data)); } catch (e) { /* ignorar */ } };
+  return {
+    get: (k) => data[k],
+    set(k, v) { data[k] = v; this.flush(); },
+    flush() { clearTimeout(timer); timer = setTimeout(write, 400); },
+    flushNow() { clearTimeout(timer); write(); }
+  };
+}
+
+const settings = () => ({ ...DEFAULT_SETTINGS, ...(store.get('settings') || {}) });
+const publicSettings = () => {
+  const s = settings();
+  return { ...s, searchUrl: ENGINES[s.searchEngine] || ENGINES.duckduckgo, adblockAvailable: !!blocker };
+};
+
+function sanitizeSettings(p) {
+  const out = {};
+  if (typeof p.searchEngine === 'string' && Object.hasOwn(ENGINES, p.searchEngine)) out.searchEngine = p.searchEngine;
+  if (typeof p.homepage === 'string') {
+    const h = p.homepage.trim();
+    if (h === '' || /^https?:\/\/\S+$/i.test(h)) out.homepage = h;
+  }
+  if (typeof p.accent === 'string' && /^#[0-9a-f]{6}$/i.test(p.accent)) out.accent = p.accent;
+  if (p.theme === 'dark' || p.theme === 'light') out.theme = p.theme;
+  if (typeof p.adblock === 'boolean') out.adblock = p.adblock;
+  if (typeof p.restoreSession === 'boolean') out.restoreSession = p.restoreSession;
+  if (typeof p.translateTo === 'string' && /^[a-z]{2}(-[A-Za-z]{2,4})?$/.test(p.translateTo)) out.translateTo = p.translateTo;
+  if (typeof p.clearOnExit === 'boolean') out.clearOnExit = p.clearOnExit;
+  if (typeof p.activeProfile === 'string' && /^[a-z0-9][a-z0-9 _-]{0,23}$/i.test(p.activeProfile.trim())) out.activeProfile = p.activeProfile.trim();
+  if (Array.isArray(p.profiles)) out.profiles = [...new Set(p.profiles.filter((x) => typeof x === 'string' && /^[a-z0-9][a-z0-9 _-]{0,23}$/i.test(x.trim())).map((x) => x.trim()))].slice(0, 20);
+  return out;
+}
+
+function profilePartition(name) {
+  const slug = String(name || 'personal').toLowerCase().trim().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'personal';
+  if (slug === 'personal') return PARTITION;
+  return `persist:dodi-profile-${slug}`;
+}
+function allowedPartition(partition) {
+  return partition === PARTITION || partition === PRIVATE_PARTITION || /^persist:dodi-profile-[a-z0-9-]{1,24}$/.test(partition);
+}
+
+function sanitizeShortcuts(list) {
+  if (!Array.isArray(list)) return DEFAULT_SHORTCUTS;
+  const out = [];
+  for (const it of list) {
+    try {
+      const u = new URL(String(it.url));
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
+      out.push({ title: String(it.title || u.hostname).trim().slice(0, 30) || u.hostname, url: u.href });
+    } catch (e) { /* url inválida */ }
+  }
+  return out.slice(0, 24);
+}
+
+/* ---------- seguridad de IPC ---------- */
+
+function isInternalUrl(u) {
+  try {
+    let f = path.resolve(fileURLToPath(u));
+    let root = path.resolve(__dirname) + path.sep;
+    if (process.platform === 'win32') { f = f.toLowerCase(); root = root.toLowerCase(); }
+    return f.startsWith(root);
+  } catch (e) { return false; }
+}
+const senderUrl = (e) => (e.senderFrame ? e.senderFrame.url : e.sender.getURL());
+const fromMain = (e) => !!win && e.sender === win.webContents;
+const ok = (e) => fromMain(e) || isInternalUrl(senderUrl(e));
+
+function send(cmd, arg) {
+  if (win && !win.isDestroyed()) win.webContents.send('cmd', cmd, arg);
+}
+function broadcast(channel, payload) {
+  const targets = [win && !win.isDestroyed() ? win.webContents : null, ...subs];
+  targets.forEach((wc) => { if (wc && !wc.isDestroyed()) wc.send(channel, payload); });
+}
+const isPrivate = (contents) => contents.session === session.fromPartition(PRIVATE_PARTITION);
+
+/* ---------- historial ---------- */
+
+function addHistory(url, title) {
+  const items = historyStore.get('items');
+  const last = items[items.length - 1];
+  if (last && last.url === url && Date.now() - last.time < 5000) return;
+  items.push({ url, title: title || '', time: Date.now() });
+  if (items.length > 5000) items.splice(0, items.length - 5000);
+  historyStore.flush();
+}
+function updateHistoryTitle(url, title) {
+  const items = historyStore.get('items');
+  for (let i = items.length - 1; i >= Math.max(0, items.length - 5); i--) {
+    if (items[i].url === url) { items[i].title = title; historyStore.flush(); break; }
+  }
+}
+
+/* ---------- descargas ---------- */
+
+function uniquePath(dir, name) {
+  const safeName = path.basename(name) || 'descarga';
+  const ext = path.extname(safeName);
+  const base = path.basename(safeName, ext);
+  let p = path.join(dir, safeName);
+  let i = 1;
+  while (fs.existsSync(p)) p = path.join(dir, `${base} (${i++})${ext}`);
+  return p;
+}
+
+let pushTimer = null;
+function pushDownloads(now) {
+  if (now) { clearTimeout(pushTimer); pushTimer = null; broadcast('downloads', downloads); return; }
+  if (pushTimer) return;
+  pushTimer = setTimeout(() => { pushTimer = null; broadcast('downloads', downloads); }, 250);
+}
+const persistDownloads = () => store.set('downloads', downloads.filter((d) => !liveItems.has(d.id)).slice(0, 100));
+
+function setupDownloads(ses) {
+  ses.on('will-download', (_e, item) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const savePath = uniquePath(app.getPath('downloads'), item.getFilename());
+    item.setSavePath(savePath);
+    const rec = { id, name: path.basename(savePath), url: item.getURL(), path: savePath, total: item.getTotalBytes(), received: 0, state: 'progressing', time: Date.now() };
+    downloads.unshift(rec);
+    liveItems.set(id, item);
+    item.on('updated', (_ev, state) => {
+      rec.received = item.getReceivedBytes();
+      rec.total = item.getTotalBytes();
+      rec.state = state === 'interrupted' ? 'interrupted' : (item.isPaused() ? 'paused' : 'progressing');
+      pushDownloads(false);
+    });
+    item.once('done', (_ev, state) => {
+      rec.state = state;
+      rec.received = item.getReceivedBytes();
+      liveItems.delete(id);
+      persistDownloads();
+      pushDownloads(true);
+    });
+    pushDownloads(true);
+  });
+}
+
+/* ---------- permisos (se pregunta al usuario) ---------- */
+
+const permCache = new Map();
+function setupPermissions(ses, partition) {
+  const labels = { media: 'la cámara o el micrófono', geolocation: 'tu ubicación', notifications: 'enviar notificaciones' };
+  ses.setPermissionRequestHandler(async (_wc, permission, cb, details) => {
+    if (['fullscreen', 'clipboard-sanitized-write', 'pointerLock'].includes(permission)) return cb(true);
+    if (!labels[permission]) return cb(false);
+    let origin = '';
+    try { origin = new URL(details.requestingUrl).origin; } catch (e) { /* sin origen */ }
+    const key = `${origin}|${permission}`;
+    const cacheKey = `${partition}|${key}`;
+    const privateSession = partition === PRIVATE_PARTITION;
+    const saved = privateSession ? undefined : (store.get('permissions') || {})[key];
+    if (typeof saved === 'boolean') return cb(saved);
+    if (permCache.has(cacheKey)) return cb(permCache.get(cacheKey));
+    const r = await dialog.showMessageBox(win, {
+      type: 'question', buttons: ['Permitir', 'Bloquear'], defaultId: 1, cancelId: 1,
+      title: 'Permiso solicitado', message: `${origin || 'Este sitio'} quiere usar ${labels[permission]}.`
+    });
+    const allow = r.response === 0;
+    permCache.set(cacheKey, allow);
+    if (!privateSession) store.set('permissions', { ...(store.get('permissions') || {}), [key]: allow });
+    cb(allow);
+  });
+}
+
+function setupProfileSession(partition) {
+  if (!allowedPartition(partition)) return null;
+  const ses = session.fromPartition(partition);
+  if (initializedPartitions.has(partition)) return ses;
+  initializedPartitions.add(partition);
+  setupDownloads(ses);
+  setupPermissions(ses, partition);
+  if (blocker) {
+    try { if (settings().adblock) blocker.enableBlockingInSession(ses); }
+    catch (e) { console.warn('No se pudo activar el bloqueador:', e.message); }
+  }
+  return ses;
+}
+
+async function clearBrowsingData() {
+  permCache.clear();
+  store.set('permissions', {});
+  historyStore.set('items', []);
+  for (const partition of initializedPartitions) {
+    const ses = session.fromPartition(partition);
+    await ses.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'] });
+    await ses.clearCache();
+  }
+}
+
+/* ---------- bloqueador de anuncios (opcional) ---------- */
+
+async function initAdblock() {
+  try {
+    const { ElectronBlocker } = require('@ghostery/adblocker-electron');
+    blocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, {
+      path: path.join(app.getPath('userData'), 'adblock-engine.bin'),
+      read: fs.promises.readFile,
+      write: fs.promises.writeFile
+    });
+    applyAdblock();
+    broadcast('settings', publicSettings());
+  } catch (e) {
+    console.warn('Bloqueador de anuncios no disponible:', e.message);
+  }
+}
+function applyAdblock() {
+  if (!blocker) return;
+  initializedPartitions.forEach((p) => {
+    const ses = session.fromPartition(p);
+    try {
+      if (settings().adblock) blocker.enableBlockingInSession(ses);
+      else blocker.disableBlockingInSession(ses);
+    } catch (e) { /* ignorar */ }
+  });
+}
+
+/* ---------- ventana ---------- */
+
+function createWindow() {
+  const iconPath = path.join(__dirname, 'build', 'icon.png');
+  win = new BrowserWindow({
+    width: 1360, height: 860, minWidth: 720, minHeight: 480,
+    backgroundColor: '#0F1B1F', title: 'DodiNavigator', autoHideMenuBar: true,
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true, nodeIntegration: false, webviewTag: true
+    }
+  });
+  // Surface renderer failures in the CMD window used to launch the app.
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    if (level >= 2) console.error(`[Dodi renderer] ${message} (${sourceId}:${line})`);
+  });
+  win.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+    if (isMainFrame) console.error(`[Dodi load] ${description} (${code}): ${url}`);
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[Dodi renderer exited] ${details.reason}, code ${details.exitCode}`);
+  });
+  win.webContents.on('will-attach-webview', (e, webPreferences, params) => {
+    if (!allowedPartition(params.partition)) { e.preventDefault(); return; }
+    setupProfileSession(params.partition);
+    webPreferences.preload = path.join(__dirname, 'internal-preload.js');
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.webSecurity = true;
+    webPreferences.sandbox = true;
+  });
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.loadFile('index.html');
+  win.on('closed', () => { win = null; });
+}
+
+function contextMenuFor(contents, params) {
+  const t = [];
+  const editable = params.isEditable;
+  if (params.linkURL && /^https?:/i.test(params.linkURL)) {
+    t.push({ label: 'Abrir enlace en pestaña nueva', click: () => send('open-url', { url: params.linkURL, private: isPrivate(contents) }) });
+    t.push({ label: 'Copiar dirección del enlace', click: () => clipboard.writeText(params.linkURL) });
+    t.push({ type: 'separator' });
+  }
+  if (params.mediaType === 'image' && params.srcURL) {
+    t.push({ label: 'Guardar imagen como…', click: () => contents.downloadURL(params.srcURL) });
+    t.push({ label: 'Copiar imagen', click: () => contents.copyImageAt(params.x, params.y) });
+    t.push({ type: 'separator' });
+  }
+  if (editable) {
+    t.push({ label: 'Deshacer', click: () => contents.undo() }, { label: 'Rehacer', click: () => contents.redo() }, { type: 'separator' });
+    t.push({ label: 'Cortar', click: () => contents.cut() });
+  }
+  if (params.selectionText || editable) t.push({ label: 'Copiar', click: () => contents.copy() });
+  if (editable) t.push({ label: 'Pegar', click: () => contents.paste() });
+  t.push({ label: 'Seleccionar todo', click: () => contents.selectAll() }, { type: 'separator' });
+  t.push({ label: 'Atrás', enabled: contents.navigationHistory.canGoBack(), click: () => contents.navigationHistory.goBack() });
+  t.push({ label: 'Adelante', enabled: contents.navigationHistory.canGoForward(), click: () => contents.navigationHistory.goForward() });
+  t.push({ label: 'Recargar', click: () => contents.reload() });
+  t.push({ type: 'separator' }, { label: 'Inspeccionar', click: () => contents.inspectElement(params.x, params.y) });
+  Menu.buildFromTemplate(t).popup({ window: win });
+}
+
+app.on('web-contents-created', (_e, contents) => {
+  if (contents.getType() !== 'webview') return;
+  contents.on('console-message', (_event, level, message, line, sourceId) => {
+    if (level >= 2) console.error(`[Dodi tab] ${message} (${sourceId}:${line})`);
+  });
+  contents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+    if (isMainFrame && code !== -3) console.error(`[Dodi tab load] ${description} (${code}): ${url}`);
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) send('open-url', { url, private: isPrivate(contents) });
+    return { action: 'deny' };
+  });
+  contents.on('context-menu', (_ev, params) => contextMenuFor(contents, params));
+  contents.on('did-navigate', (_ev, url) => {
+    if (!isPrivate(contents) && /^https?:/i.test(url)) addHistory(url, contents.getTitle());
+  });
+  contents.on('page-title-updated', (_ev, title) => {
+    if (!isPrivate(contents)) updateHistoryTitle(contents.getURL(), title);
+  });
+});
+
+function buildMenu() {
+  const it = (label, accelerator, cmd, arg) => ({ label, accelerator, click: () => send(cmd, arg) });
+  const template = [
+    {
+      label: 'Navegador',
+      submenu: [
+        it('Nueva pestaña', 'CmdOrCtrl+T', 'new-tab'),
+        it('Nueva pestaña privada', 'CmdOrCtrl+Shift+N', 'new-private-tab'),
+        it('Reabrir pestaña cerrada', 'CmdOrCtrl+Shift+T', 'reopen-tab'),
+        it('Cerrar pestaña', 'CmdOrCtrl+W', 'close-tab'),
+        it('Ir a la barra de direcciones', 'CmdOrCtrl+L', 'focus-address'),
+        it('Buscar en la página', 'CmdOrCtrl+F', 'find'),
+        it('Recargar', 'CmdOrCtrl+R', 'reload'),
+        { ...it('Recargar (F5)', 'F5', 'reload'), visible: false },
+        it('Atrás', 'Alt+Left', 'back'),
+        it('Adelante', 'Alt+Right', 'forward'),
+        it('Inicio', 'Alt+Home', 'home'),
+        it('Pestaña siguiente', 'Ctrl+Tab', 'next-tab'),
+        it('Pestaña anterior', 'Ctrl+Shift+Tab', 'prev-tab'),
+        { type: 'separator' },
+        it('Acercar', 'CmdOrCtrl+Plus', 'zoom-in'),
+        { ...it('Acercar (=)', 'CmdOrCtrl+=', 'zoom-in'), visible: false },
+        it('Alejar', 'CmdOrCtrl+-', 'zoom-out'),
+        it('Tamaño normal', 'CmdOrCtrl+0', 'zoom-reset'),
+        { role: 'togglefullscreen', label: 'Pantalla completa' },
+        { type: 'separator' },
+        it('Favoritos y notas', 'CmdOrCtrl+B', 'side'),
+        it('Historial', 'CmdOrCtrl+H', 'history'),
+        it('Descargas', 'CmdOrCtrl+J', 'downloads'),
+        it('Ajustes', 'CmdOrCtrl+,', 'settings'),
+        it('Modo lectura', 'CmdOrCtrl+Alt+R', 'reader'),
+        it('Traducir página', 'CmdOrCtrl+Alt+T', 'translate'),
+        it('Herramientas de desarrollo', 'F12', 'devtools'),
+        { type: 'separator' },
+        { role: 'quit', label: 'Salir' }
+      ]
+    },
+    { role: 'editMenu' }
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+/* ---------- IPC ---------- */
+
+ipcMain.on('subscribe', (e) => {
+  if (!isInternalUrl(senderUrl(e)) || subs.has(e.sender)) return;
+  subs.add(e.sender);
+  e.sender.once('destroyed', () => subs.delete(e.sender));
+});
+
+ipcMain.handle('settings:get', (e) => (ok(e) ? publicSettings() : null));
+ipcMain.handle('settings:set', (e, patch) => {
+  if (!ok(e) || !patch || typeof patch !== 'object') return publicSettings();
+  const clean = sanitizeSettings(patch);
+  if (clean.activeProfile) {
+    clean.profiles = [...new Set([...(settings().profiles || ['personal']), clean.activeProfile])].slice(0, 20);
+  }
+  store.set('settings', { ...settings(), ...clean });
+  if ('adblock' in clean) applyAdblock();
+  broadcast('settings', publicSettings());
+  return publicSettings();
+});
+
+ipcMain.handle('shortcuts:get', (e) => (ok(e) ? (store.get('shortcuts') || DEFAULT_SHORTCUTS) : []));
+ipcMain.handle('shortcuts:set', (e, list) => {
+  if (!ok(e)) return [];
+  const clean = sanitizeShortcuts(list);
+  store.set('shortcuts', clean);
+  return clean;
+});
+
+ipcMain.handle('history:get', (e, q) => {
+  if (!ok(e)) return [];
+  const query = String(q || '').toLowerCase();
+  const items = historyStore.get('items');
+  const out = [];
+  for (let i = items.length - 1; i >= 0 && out.length < 500; i--) {
+    const h = items[i];
+    if (!query || h.url.toLowerCase().includes(query) || (h.title || '').toLowerCase().includes(query)) out.push(h);
+  }
+  return out;
+});
+ipcMain.handle('history:delete', (e, url, time) => {
+  if (!ok(e)) return;
+  historyStore.set('items', historyStore.get('items').filter((h) => !(h.url === url && h.time === time)));
+});
+ipcMain.handle('history:clear', (e) => { if (ok(e)) historyStore.set('items', []); });
+
+ipcMain.handle('downloads:get', (e) => (ok(e) ? downloads : []));
+ipcMain.handle('downloads:open', async (e, id) => {
+  if (!ok(e)) return;
+  const d = downloads.find((x) => x.id === id);
+  if (!d || d.state !== 'completed') return;
+  if (RISKY_EXT.test(d.path)) {
+    const r = await dialog.showMessageBox(win, {
+      type: 'warning', buttons: ['Abrir', 'Cancelar'], defaultId: 1, cancelId: 1,
+      title: 'Archivo ejecutable', message: `"${d.name}" puede ejecutar código en tu equipo. ¿Abrirlo de todas formas?`
+    });
+    if (r.response !== 0) return;
+  }
+  shell.openPath(d.path);
+});
+ipcMain.handle('downloads:show', (e, id) => {
+  if (!ok(e)) return;
+  const d = downloads.find((x) => x.id === id);
+  if (d) shell.showItemInFolder(d.path);
+});
+ipcMain.handle('downloads:cancel', (e, id) => {
+  if (!ok(e)) return;
+  const it = liveItems.get(id);
+  if (it) it.cancel();
+});
+ipcMain.handle('downloads:pause', (e, id) => {
+  if (!ok(e)) return;
+  const it = liveItems.get(id);
+  if (it && it.isPaused && !it.isPaused()) it.pause();
+});
+ipcMain.handle('downloads:resume', (e, id) => {
+  if (!ok(e)) return;
+  const it = liveItems.get(id);
+  if (it && it.isPaused && it.isPaused()) it.resume();
+});
+ipcMain.handle('downloads:clear', (e) => {
+  if (!ok(e)) return;
+  downloads = downloads.filter((d) => liveItems.has(d.id));
+  persistDownloads();
+  pushDownloads(true);
+});
+
+ipcMain.handle('data:clear', async (e, kind) => {
+  if (!ok(e)) return;
+  for (const p of initializedPartitions) {
+    const ses = session.fromPartition(p);
+    if (kind === 'cache' || kind === 'all') await ses.clearCache();
+    if (kind === 'cookies' || kind === 'all') {
+      await ses.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'] });
+    }
+  }
+});
+ipcMain.handle('private:closed', async (e) => {
+  if (!fromMain(e)) return;
+  const ses = session.fromPartition(PRIVATE_PARTITION);
+  await ses.clearStorageData();
+  await ses.clearCache();
+  for (const key of permCache.keys()) if (key.startsWith(`${PRIVATE_PARTITION}|`)) permCache.delete(key);
+});
+
+ipcMain.handle('permissions:get', (e) => {
+  if (!ok(e)) return [];
+  return Object.entries(store.get('permissions') || {}).map(([key, allowed]) => {
+    const [origin, permission] = key.split('|');
+    return { key, origin, permission, allowed };
+  });
+});
+ipcMain.handle('permissions:revoke', (e, key) => {
+  if (!ok(e) || typeof key !== 'string') return;
+  const next = { ...(store.get('permissions') || {}) };
+  delete next[key];
+  store.set('permissions', next);
+  for (const cacheKey of permCache.keys()) if (cacheKey.endsWith(`|${key}`)) permCache.delete(cacheKey);
+});
+ipcMain.handle('permissions:clear', (e) => {
+  if (!ok(e)) return;
+  permCache.clear();
+  store.set('permissions', {});
+});
+
+ipcMain.handle('store:get', (e, k) => {
+  if (!fromMain(e) || !UI_STORE_KEYS.includes(k)) return null;
+  const v = store.get(k);
+  return v === undefined ? null : v;
+});
+ipcMain.handle('store:set', (e, k, v) => {
+  if (!fromMain(e) || !UI_STORE_KEYS.includes(k)) return;
+  store.set(k, v);
+});
+
+/* ---------- arranque ---------- */
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+  });
+  app.whenReady().then(() => {
+    app.setAppUserModelId('com.dodi.navigator');
+    store = makeStore('data.json', {});
+    historyStore = makeStore('history.json', { items: [] });
+    downloads = (store.get('downloads') || []).map((d) => (d.state === 'progressing' || d.state === 'paused' ? { ...d, state: 'interrupted' } : d));
+    (settings().profiles || ['personal']).forEach((profile) => setupProfileSession(profilePartition(profile)));
+    setupProfileSession(profilePartition(settings().activeProfile));
+    setupProfileSession(PRIVATE_PARTITION);
+    buildMenu();
+    createWindow();
+    initAdblock();
+    app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  });
+  let quitCleanupStarted = false;
+  app.on('before-quit', (e) => {
+    if (store && settings().clearOnExit && !quitCleanupStarted) {
+      e.preventDefault();
+      quitCleanupStarted = true;
+      clearBrowsingData().catch((err) => console.error('No se pudieron borrar los datos al salir:', err.message))
+        .finally(() => { store.flushNow(); historyStore.flushNow(); app.quit(); });
+      return;
+    }
+    if (store) store.flushNow();
+    if (historyStore) historyStore.flushNow();
+  });
+  app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+}

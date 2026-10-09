@@ -1,0 +1,58 @@
+{
+  "name": "dodinavigator",
+  "version": "1.2.0",
+  "description": "DodiNavigator - navegador web basado en Chromium",
+  "main": "main.js",
+  "author": "DavidDoderoVaz",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "optionalDependencies": {
+    "@ghostery/adblocker-electron": "^2.0.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.dodi.navigator",
+    "productName": "DodiNavigator",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/**",
+      "!README.md",
+      "!*.zip"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network"
+    }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}

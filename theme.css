@@ -1,0 +1,12 @@
+:root, :root[data-theme="dark"] {
+  --bg: #0F1B1F; --strip: #0B1417; --bar: #16262B; --raised: #1F3A40;
+  --text: #E8F1F2; --muted: #9DB3B7; --line: #26393F;
+  --accent: #3DDBB0; --accent-ink: var(--accent); --on-accent: #06231C;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #F4F7F7; --strip: #E3EAEB; --bar: #FFFFFF; --raised: #DCE7E8;
+  --text: #14262B; --muted: #4A6368; --line: #C9D6D8;
+  --accent-ink: color-mix(in srgb, var(--accent) 45%, #000);
+  color-scheme: light;
+}

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Historial</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="internal.css">
+</head>
+<body>
+<main>
+  <h1>Historial</h1>
+  <div class="top">
+    <input id="q" class="field" type="search" placeholder="Buscar en el historial" aria-label="Buscar en el historial" autocomplete="off">
+    <button id="clear" class="btn danger">Borrar todo</button>
+  </div>
+  <p id="empty" class="muted" hidden>No hay páginas en el historial.</p>
+  <div id="list" class="list"></div>
+</main>
+<script src="theme.js"></script>
+<script>
+(function () {
+  var D = window.dodi;
+  var list = document.getElementById('list');
+  var q = document.getElementById('q');
+  var timer;
+  function load() {
+    D.getHistory(q.value).then(function (items) {
+      list.textContent = '';
+      document.getElementById('empty').hidden = items.length > 0;
+      var cur = '';
+      items.forEach(function (h) {
+        var d = new Date(h.time).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        if (d !== cur) { cur = d; var h2 = document.createElement('h2'); h2.textContent = d; list.appendChild(h2); }
+        var row = document.createElement('div'); row.className = 'item';
+        var t = document.createElement('time');
+        t.textContent = new Date(h.time).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+        var g = document.createElement('div'); g.className = 'grow';
+        var a = document.createElement('a'); a.className = 't'; a.href = h.url; a.textContent = h.title || h.url;
+        var s = document.createElement('span'); s.className = 's'; s.textContent = h.url;
+        g.append(a, s);
+        var x = document.createElement('button'); x.className = 'x'; x.textContent = '×';
+        x.setAttribute('aria-label', 'Quitar del historial: ' + (h.title || h.url));
+        x.addEventListener('click', function () { D.deleteHistory(h.url, h.time).then(load); });
+        row.append(t, g, x);
+        list.appendChild(row);
+      });
+    });
+  }
+  q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(load, 150); });
+  var armed = false, clear = document.getElementById('clear');
+  clear.addEventListener('click', function () {
+    if (!armed) { armed = true; clear.textContent = 'Confirmar'; setTimeout(function () { armed = false; clear.textContent = 'Borrar todo'; }, 3000); return; }
+    armed = false; clear.textContent = 'Borrar todo'; D.clearHistory().then(load);
+  });
+  load();
+})();
+</script>
+</body>
+</html>

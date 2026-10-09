@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Nueva pestaña</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 32px; padding: 32px; background: var(--bg); color: var(--text); font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif; }
+  h1 { margin: 0; font-size: 72px; letter-spacing: -2px; color: var(--accent-ink); text-align: center; }
+  p.sub { margin: 8px 0 0; color: var(--muted); font-size: 18px; text-align: center; }
+  form.search { width: min(640px, 100%); }
+  .search input { width: 100%; height: 56px; padding: 0 24px; border: 2px solid var(--accent-ink); border-radius: 28px; background: var(--bar); color: var(--text); font: inherit; font-size: 17px; }
+  .search input:focus { outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+  input::placeholder { color: var(--muted); }
+  .grid { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; max-width: 880px; }
+  .tile { position: relative; }
+  .tile a, .add { width: 120px; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 8px; background: var(--bar); border-radius: 16px; color: var(--text); text-decoration: none; font-size: 14px; }
+  .tile a span.ic, .add span.ic { width: 44px; height: 44px; border-radius: 12px; background: var(--raised); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; color: var(--accent-ink); }
+  .tile a b { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 400; }
+  .tile a:hover, .tile a:focus-visible, .add:hover { background: var(--raised); outline: none; }
+  .tile a:focus-visible, .add:focus-visible { outline: 2px solid var(--accent-ink); }
+  .rm { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: var(--strip); color: var(--muted); font-size: 15px; cursor: pointer; opacity: 0; }
+  .tile:hover .rm, .tile:focus-within .rm { opacity: 1; }
+  .add { border: 2px dashed var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; }
+  form.new { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  form.new input { height: 40px; padding: 0 14px; border: 2px solid transparent; border-radius: 10px; background: var(--bar); color: var(--text); font: inherit; font-size: 14px; }
+  form.new input:focus { border-color: var(--accent-ink); outline: none; }
+  form.new button { height: 40px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--raised); color: var(--text); font: inherit; cursor: pointer; }
+  form.new button.ok { background: var(--accent); color: var(--on-accent); }
+  #err { min-height: 18px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+  <div><h1>Dodi</h1><p class="sub">Un navegador ligero, rápido y tuyo.</p></div>
+  <form id="f" class="search"><input id="q" type="text" autocomplete="off" placeholder="Buscar en la web" aria-label="Buscar en la web" autofocus></form>
+  <div id="grid" class="grid"></div>
+  <form id="newform" class="new" hidden>
+    <input id="n-title" type="text" placeholder="Nombre" aria-label="Nombre del acceso" maxlength="30">
+    <input id="n-url" type="text" placeholder="https://…" aria-label="Dirección del acceso" autocomplete="off">
+    <button class="ok" type="submit">Guardar</button>
+    <button type="button" id="n-cancel">Cancelar</button>
+  </form>
+  <div id="err" role="status" aria-live="polite"></div>
+<script src="theme.js"></script>
+<script>
+(function () {
+  var D = window.dodi;
+  var $ = function (id) { return document.getElementById(id); };
+  var searchUrl = 'https://duckduckgo.com/?q=%s';
+  var list = [];
+  D.getSettings().then(function (s) { if (s) searchUrl = s.searchUrl; });
+  D.onSettings(function (s) { if (s) searchUrl = s.searchUrl; });
+
+  $('f').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = $('q').value.trim();
+    if (!v) return;
+    if (/^https?:\/\//i.test(v)) location.href = v;
+    else if (!/\s/.test(v) && /^[^\s/]+\.[a-z]{2,}([/?#].*)?$/i.test(v)) location.href = 'https://' + v;
+    else location.href = searchUrl.replace('%s', encodeURIComponent(v));
+  });
+
+  function save(next) { return D.setShortcuts(next).then(function (r) { list = r; render(); }); }
+  function render() {
+    var grid = $('grid');
+    grid.textContent = '';
+    list.forEach(function (it, i) {
+      var tile = document.createElement('div'); tile.className = 'tile';
+      var a = document.createElement('a'); a.href = it.url;
+      var ic = document.createElement('span'); ic.className = 'ic'; ic.textContent = (it.title[0] || '?').toUpperCase();
+      var b = document.createElement('b'); b.textContent = it.title;
+      a.append(ic, b);
+      var rm = document.createElement('button'); rm.className = 'rm'; rm.textContent = '×';
+      rm.setAttribute('aria-label', 'Quitar ' + it.title);
+      rm.addEventListener('click', function () { save(list.filter(function (_, j) { return j !== i; })); });
+      tile.append(a, rm);
+      grid.appendChild(tile);
+    });
+    if (list.length < 24) {
+      var add = document.createElement('button'); add.className = 'add'; add.type = 'button';
+      var ic2 = document.createElement('span'); ic2.className = 'ic'; ic2.textContent = '+';
+      add.append(ic2, document.createTextNode('Añadir'));
+      add.addEventListener('click', function () { $('newform').hidden = false; $('n-title').focus(); });
+      grid.appendChild(add);
+    }
+  }
+  $('n-cancel').addEventListener('click', function () { $('newform').hidden = true; $('err').textContent = ''; });
+  $('newform').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var url = $('n-url').value.trim();
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    try { new URL(url); } catch (x) { $('err').textContent = 'Esa dirección no es válida.'; return; }
+    save(list.concat([{ title: $('n-title').value.trim(), url: url }])).then(function () {
+      $('newform').hidden = true; $('err').textContent = ''; $('n-title').value = ''; $('n-url').value = '';
+    });
+  });
+  D.getShortcuts().then(function (r) { list = r; render(); });
+})();
+</script>
+</body>
+</html>

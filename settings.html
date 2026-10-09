@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Ajustes</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="internal.css">
+</head>
+<body>
+<main>
+  <h1>Ajustes</h1>
+
+  <h2>General</h2>
+  <div class="card">
+    <div class="row"><label class="label" for="activeProfile">Perfil para pestañas nuevas<span class="hint">Cada perfil separa cookies e inicios de sesión. Los favoritos e historial siguen compartidos.</span></label>
+      <input id="activeProfile" type="text" maxlength="24" placeholder="personal" autocomplete="off"></div>
+    <div class="row"><label class="label" for="searchEngine">Buscador</label>
+      <select id="searchEngine"><option value="duckduckgo">DuckDuckGo</option><option value="google">Google</option><option value="bing">Bing</option><option value="brave">Brave Search</option></select></div>
+    <div class="row"><label class="label" for="homepage">Página de inicio<span class="hint">Vacío = página de nueva pestaña. Se abre con el botón Inicio.</span></label>
+      <input id="homepage" type="text" placeholder="https://…" autocomplete="off" spellcheck="false"></div>
+    <div class="row"><label class="label" for="translateTo">Traducir páginas a</label>
+      <select id="translateTo"><option value="es">Español</option><option value="en">Inglés</option><option value="fr">Francés</option><option value="pt">Portugués</option><option value="de">Alemán</option><option value="it">Italiano</option></select></div>
+    <div class="row"><label class="label" for="restoreSession">Restaurar pestañas al abrir el navegador</label>
+      <input id="restoreSession" type="checkbox"></div>
+  </div>
+
+  <h2>Apariencia</h2>
+  <div class="card">
+    <div class="row"><label class="label" for="theme">Tema</label>
+      <select id="theme"><option value="dark">Oscuro</option><option value="light">Claro</option></select></div>
+    <div class="row"><span class="label" id="accent-label">Color de acento</span>
+      <div class="swatches" role="group" aria-labelledby="accent-label" id="swatches"></div></div>
+  </div>
+
+  <h2>Privacidad</h2>
+  <div class="card">
+    <div class="row"><label class="label" for="adblock">Bloquear anuncios y rastreadores<span class="hint" id="adblock-status"></span></label>
+      <input id="adblock" type="checkbox"></div>
+    <div class="row"><label class="label" for="clearOnExit">Borrar historial, cookies y caché al cerrar</label>
+      <input id="clearOnExit" type="checkbox"></div>
+    <div class="row"><span class="label">Historial de navegación</span><button class="btn danger" id="clear-history">Borrar historial</button></div>
+    <div class="row"><span class="label">Cookies y datos de sitios<span class="hint">Cierra tu sesión en los sitios web.</span></span><button class="btn danger" id="clear-cookies">Borrar cookies</button></div>
+    <div class="row"><span class="label">Caché de imágenes y archivos</span><button class="btn danger" id="clear-cache">Vaciar caché</button></div>
+    <div class="row"><label class="label">Permisos recordados por sitio<span class="hint">Se aplican a cámara, micrófono, ubicación y notificaciones.</span></label>
+      <button class="btn danger" id="clear-permissions">Borrar permisos</button></div>
+    <div id="permission-list" class="permission-list"></div>
+  </div>
+  <div id="msg" role="status" aria-live="polite"></div>
+</main>
+<script src="theme.js"></script>
+<script>
+(function () {
+  var D = window.dodi;
+  var $ = function (id) { return document.getElementById(id); };
+  var COLORS = [['#3DDBB0', 'Menta'], ['#6AA9FF', 'Azul'], ['#FF9F5A', 'Naranja'], ['#C792EA', 'Violeta'], ['#F2C94C', 'Amarillo']];
+  var timer;
+  function note(t) { $('msg').textContent = t; clearTimeout(timer); timer = setTimeout(function () { $('msg').textContent = ''; }, 3500); }
+
+  var sw = $('swatches');
+  COLORS.forEach(function (c) {
+    var b = document.createElement('button');
+    b.className = 'sw'; b.style.background = c[0]; b.dataset.color = c[0];
+    b.setAttribute('aria-label', c[1]); b.setAttribute('aria-pressed', 'false'); b.title = c[1];
+    b.addEventListener('click', function () { D.setSettings({ accent: c[0] }); });
+    sw.appendChild(b);
+  });
+  var picker = document.createElement('input');
+  picker.type = 'color'; picker.setAttribute('aria-label', 'Color personalizado');
+  picker.addEventListener('input', function () { D.setSettings({ accent: picker.value }); });
+  sw.appendChild(picker);
+
+  function fill(s) {
+    if (!s) return;
+    $('searchEngine').value = s.searchEngine;
+    $('activeProfile').value = s.activeProfile || 'personal';
+    $('theme').value = s.theme;
+    $('translateTo').value = s.translateTo;
+    $('restoreSession').checked = !!s.restoreSession;
+    $('clearOnExit').checked = !!s.clearOnExit;
+    if (document.activeElement !== $('homepage')) $('homepage').value = s.homepage || '';
+    $('adblock').checked = !!s.adblock;
+    $('adblock').disabled = !s.adblockAvailable;
+    $('adblock-status').textContent = s.adblockAvailable
+      ? 'Activo en todas las pestañas.'
+      : 'No disponible todavía: necesita el paquete @ghostery/adblocker-electron (npm install) y conexión a internet la primera vez.';
+    picker.value = s.accent;
+    document.querySelectorAll('.sw').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.color.toLowerCase() === s.accent.toLowerCase())); });
+  }
+  D.getSettings().then(fill);
+  D.onSettings(fill);
+
+  ['searchEngine', 'theme', 'translateTo'].forEach(function (id) {
+    $(id).addEventListener('change', function (e) { var p = {}; p[id] = e.target.value; D.setSettings(p); });
+  });
+  ['restoreSession', 'adblock'].forEach(function (id) {
+    $(id).addEventListener('change', function (e) { var p = {}; p[id] = e.target.checked; D.setSettings(p); });
+  });
+  $('clearOnExit').addEventListener('change', function (e) { D.setSettings({ clearOnExit: e.target.checked }); });
+  $('activeProfile').addEventListener('change', function (e) {
+    var value = e.target.value.trim();
+    if (!/^[a-z0-9][a-z0-9 _-]{0,23}$/i.test(value)) { note('Usa 1 a 24 letras, números, espacios o guiones.'); e.target.value = 'personal'; return; }
+    D.setSettings({ activeProfile: value }); note('El perfil se aplicará a las pestañas nuevas.');
+  });
+  $('homepage').addEventListener('change', function (e) {
+    var v = e.target.value.trim();
+    if (v && !/^https?:\/\/\S+$/i.test(v)) { note('La página de inicio debe empezar con http:// o https://'); return; }
+    D.setSettings({ homepage: v }); note('Guardado.');
+  });
+
+  function confirmClear(btn, label, fn) {
+    var armed = false;
+    btn.addEventListener('click', function () {
+      if (!armed) { armed = true; btn.textContent = 'Confirmar'; setTimeout(function () { armed = false; btn.textContent = label; }, 3000); return; }
+      armed = false; btn.textContent = label; fn();
+    });
+  }
+  confirmClear($('clear-history'), 'Borrar historial', function () { D.clearHistory().then(function () { note('Historial borrado.'); }); });
+  confirmClear($('clear-cookies'), 'Borrar cookies', function () { D.clearData('cookies').then(function () { note('Cookies y datos de sitios borrados.'); }); });
+  confirmClear($('clear-cache'), 'Vaciar caché', function () { D.clearData('cache').then(function () { note('Caché vaciada.'); }); });
+
+  function renderPermissions(items) {
+    var box = $('permission-list'); box.textContent = '';
+    if (!items.length) { var empty = document.createElement('p'); empty.className = 'hint'; empty.textContent = 'No hay permisos guardados.'; box.appendChild(empty); return; }
+    items.forEach(function (item) {
+      var row = document.createElement('div'); row.className = 'permission-item';
+      var info = document.createElement('span'); info.textContent = item.origin + ' · ' + item.permission + ' · ' + (item.allowed ? 'Permitido' : 'Bloqueado');
+      var revoke = document.createElement('button'); revoke.className = 'btn'; revoke.textContent = 'Olvidar';
+      revoke.addEventListener('click', function () { D.revokePermission(item.key).then(loadPermissions); });
+      row.append(info, revoke); box.appendChild(row);
+    });
+  }
+  function loadPermissions() { D.getPermissions().then(renderPermissions); }
+  loadPermissions();
+  confirmClear($('clear-permissions'), 'Borrar permisos', function () { D.clearPermissions().then(function () { loadPermissions(); note('Permisos guardados borrados.'); }); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>DodiNavigator</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="tabbar">
+  <div id="tabs" role="tablist" aria-label="Pestañas"></div>
+  <button id="newtab" data-icon="plus" aria-label="Nueva pestaña" title="Nueva pestaña (Ctrl+T)"></button>
+</div>
+<div id="toolbar">
+  <button id="back" class="icon" data-icon="back" aria-label="Atrás" title="Atrás (Alt+←)"></button>
+  <button id="forward" class="icon" data-icon="forward" aria-label="Adelante" title="Adelante (Alt+→)"></button>
+  <button id="reload" class="icon" data-icon="reload" aria-label="Recargar" title="Recargar (Ctrl+R)"></button>
+  <button id="home" class="icon" data-icon="home" aria-label="Inicio" title="Inicio (Alt+Inicio)"></button>
+  <input id="addr" type="text" spellcheck="false" autocomplete="off" aria-label="Dirección" placeholder="Busca o escribe una dirección">
+  <button id="star" class="icon" data-icon="star" aria-label="Guardar en favoritos" title="Guardar en favoritos"></button>
+  <button id="downloads" class="icon" data-icon="download" aria-label="Descargas" title="Descargas (Ctrl+J)"></button>
+  <button id="sidebtn" class="icon" data-icon="side" aria-label="Favoritos y notas" title="Favoritos y notas (Ctrl+B)"></button>
+  <button id="more" class="icon" data-icon="more" aria-label="Menú" title="Menú" aria-haspopup="menu"></button>
+</div>
+<div id="findbar" hidden>
+  <input id="find-input" type="text" aria-label="Buscar en la página" placeholder="Buscar en la página" autocomplete="off">
+  <span id="find-count" role="status" aria-live="polite"></span>
+  <button id="find-prev" class="icon sm" data-icon="up" aria-label="Resultado anterior"></button>
+  <button id="find-next" class="icon sm" data-icon="down" aria-label="Resultado siguiente"></button>
+  <button id="find-close" class="icon sm" data-icon="close" aria-label="Cerrar búsqueda"></button>
+</div>
+<div id="bookmarks" aria-label="Barra de favoritos"></div>
+<div id="content">
+  <div id="views"></div>
+  <aside id="side" hidden aria-label="Panel lateral">
+    <div id="side-head" role="tablist">
+      <button class="seg active" data-pane="fav" role="tab" aria-selected="true">Favoritos</button>
+      <button class="seg" data-pane="notes" role="tab" aria-selected="false">Notas</button>
+      <button id="side-close" class="icon sm" data-icon="close" aria-label="Cerrar panel"></button>
+    </div>
+    <div id="pane-fav" class="pane">
+      <p id="fav-empty" class="muted">Aún no tienes favoritos. Usa la estrella de la barra para guardar la página actual.</p>
+      <ul id="fav-list"></ul>
+    </div>
+    <div id="pane-notes" class="pane" hidden>
+      <textarea id="notes" aria-label="Notas" placeholder="Escribe aquí tus notas. Se guardan solas."></textarea>
+    </div>
+  </aside>
+</div>
+<div id="menu" role="menu" hidden></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="theme.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>
