@@ -312,7 +312,7 @@ function createWindow() {
     backgroundColor: '#0F1B1F', title: 'DodiNavigator', autoHideMenuBar: true,
     ...(process.platform === 'win32' ? {
       titleBarStyle: 'hidden',
-      titleBarOverlay: { color: light ? '#E3EAEB' : '#0B1417', symbolColor: light ? '#4A6368' : '#9DB3B7', height: 46 }
+      titleBarOverlay: { color: light ? '#F2ECFA' : '#0B1417', symbolColor: light ? '#5F5367' : '#9DB3B7', height: 52 }
     } : {}),
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
@@ -453,7 +453,7 @@ ipcMain.handle('settings:set', async (e, patch) => {
   store.set('settings', { ...settings(), ...clean });
   if ('theme' in clean && win && process.platform === 'win32') {
     const light = clean.theme === 'light';
-    win.setTitleBarOverlay({ color: light ? '#E3EAEB' : '#0B1417', symbolColor: light ? '#4A6368' : '#9DB3B7', height: 46 });
+    win.setTitleBarOverlay({ color: light ? '#F2ECFA' : '#0B1417', symbolColor: light ? '#5F5367' : '#9DB3B7', height: 52 });
   }
   if (clean.activeProfile) {
     const profileSession = setupProfileSession(profilePartition(clean.activeProfile));

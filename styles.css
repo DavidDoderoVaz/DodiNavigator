@@ -10,15 +10,15 @@ button { font-family: inherit; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 1px; }
 .muted { color: var(--muted); font-size: 14px; }
 
-#tabbar { display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 16px; padding-right: calc(10px + max(0px, 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))); background: var(--strip); height: 46px; flex: none; -webkit-app-region: drag; user-select: none; }
-#tabs { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; -webkit-app-region: no-drag; }
+#tabbar { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 22px; padding-right: calc(10px + max(0px, 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))); background: var(--tabstrip); height: 52px; flex: none; -webkit-app-region: drag; user-select: none; }
+#tabs { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; -webkit-app-region: no-drag; }
 .tab {
-  display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px 0 12px;
-  flex: 0 1 220px; min-width: 110px; width: 220px;
-  border: 1px solid transparent; border-radius: 18px; color: var(--muted); font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 9px 0 14px;
+  flex: 0 1 240px; min-width: 128px; width: 240px;
+  border: 1px solid transparent; border-radius: 20px; color: var(--muted); font-size: 14px; cursor: pointer;
 }
-.tab:hover { background: var(--raised); color: var(--text); }
-.tab.active { background: var(--bar); border-color: color-mix(in srgb, #C9A8FF 45%, var(--line)); color: var(--text); box-shadow: 0 1px 4px rgba(0, 0, 0, .12); }
+.tab:hover { background: color-mix(in srgb, var(--tabstrip) 80%, var(--bar)); color: var(--text); }
+.tab.active { background: color-mix(in srgb, var(--tabstrip) 84%, var(--bar)); border-color: color-mix(in srgb, #C9A8FF 45%, var(--line)); color: var(--text); box-shadow: 0 1px 4px rgba(0, 0, 0, .12); }
 .tab.over { box-shadow: inset 3px 0 0 var(--accent-ink); }
 .tab.private { border-top: 2px solid #A78BFA; }
 .tab .fav { width: 14px; height: 14px; border-radius: 3px; background: var(--line); flex: none; object-fit: cover; }
@@ -26,12 +26,12 @@ button { font-family: inherit; cursor: pointer; }
 .tab.loading .fav { background: var(--accent); animation: pulse 1s infinite; }
 .tab .title { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .group-tag { max-width: 72px; padding: 2px 6px; border-radius: 8px; background: var(--raised); color: var(--text); font-size: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.tab .close { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font-size: 16px; flex: none; }
-.tab .close:hover { background: var(--raised); color: var(--text); }
+.tab .close { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font-size: 18px; flex: none; -webkit-app-region: no-drag; }
+.tab .close:hover { background: color-mix(in srgb, var(--tabstrip) 68%, var(--bar)); color: var(--text); }
 .tab.pinned { flex: none; width: 42px; min-width: 42px; padding: 0; justify-content: center; }
 .tab.pinned .title, .tab.pinned .close { display: none; }
-#newtab { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; flex: none; -webkit-app-region: no-drag; }
-#newtab:hover { background: var(--bar); color: var(--text); }
+#newtab { width: 40px; height: 40px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; flex: none; -webkit-app-region: no-drag; }
+#newtab:hover { background: color-mix(in srgb, var(--tabstrip) 80%, var(--bar)); color: var(--text); }
 @keyframes pulse { 50% { opacity: .3; } }
 
 #toolbar { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: var(--bar); flex: none; }
