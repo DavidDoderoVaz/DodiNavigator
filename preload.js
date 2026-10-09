@@ -11,5 +11,6 @@ contextBridge.exposeInMainWorld('api', {
   storeSet: (k, v) => inv('store:set', k, v),
   getDownloads: () => inv('downloads:get'),
   onDownloads: (cb) => ipcRenderer.on('downloads', (_e, d) => cb(d)),
-  privateClosed: () => inv('private:closed')
+  privateClosed: () => inv('private:closed'),
+  exportPage: (id, format) => inv('page:export', id, format)
 });

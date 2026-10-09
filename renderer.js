@@ -34,7 +34,7 @@ const findCount = $('find-count');
 const side = $('side');
 const notesEl = $('notes');
 
-let settings = { searchUrl: 'https://duckduckgo.com/?q=%s', homepage: '', restoreSession: true, translateTo: 'es' };
+let settings = { searchUrl: 'https://duckduckgo.com/?q=%s', homepage: '', restoreSession: true, translateTo: 'es', suspendInactiveTabsMinutes: 0 };
 let bookmarks = [];
 const tabs = [];
 const closed = [];
@@ -99,18 +99,19 @@ function createTab(opts) {
   const partition = o.private ? 'dodi-private' : (profileSlug === 'personal' ? 'persist:dodi' : 'persist:dodi-profile-' + profileSlug);
   wv.setAttribute('partition', partition);
   wv.setAttribute('allowpopups', '');
-  const tab = { id, wv, url: o.url || pageUrl('newtab'), title: 'Nueva pestaña', favicon: null, loading: false, loaded: !o.background, private: !!o.private, pinned: !!o.pinned, profile, group: o.group || '', zoom: 0 };
+  const tab = { id, wv, url: o.url || pageUrl('newtab'), title: 'Nueva pestaña', favicon: null, loading: false, loaded: !o.background, suspended: false, lastActiveAt: Date.now(), private: !!o.private, pinned: !!o.pinned, profile, group: o.group || '', zoom: 0 };
 
   wv.addEventListener('dom-ready', () => {
     if (tab.id === active && internalName(tab.url) === 'newtab') safe(() => wv.focus());
     updateToolbar();
   });
   wv.addEventListener('focus', hideMenu);
-  wv.addEventListener('page-title-updated', (e) => { tab.title = e.title; renderTabs(); });
-  wv.addEventListener('page-favicon-updated', (e) => { tab.favicon = e.favicons[0] || null; renderTabs(); });
-  wv.addEventListener('did-start-loading', () => { tab.loading = true; renderTabs(); updateToolbar(); });
-  wv.addEventListener('did-stop-loading', () => { tab.loading = false; renderTabs(); updateToolbar(); });
+  wv.addEventListener('page-title-updated', (e) => { if (tab.suspended) return; tab.title = e.title; renderTabs(); });
+  wv.addEventListener('page-favicon-updated', (e) => { if (tab.suspended) return; tab.favicon = e.favicons[0] || null; renderTabs(); });
+  wv.addEventListener('did-start-loading', () => { if (tab.suspended) return; tab.loading = true; renderTabs(); updateToolbar(); });
+  wv.addEventListener('did-stop-loading', () => { if (tab.suspended) return; tab.loading = false; renderTabs(); updateToolbar(); });
   const onNav = (e) => {
+    if (tab.suspended) return;
     if (e.isMainFrame === false) return;
     tab.url = e.url;
     if (internalName(e.url)) tab.favicon = null;
@@ -141,10 +142,14 @@ function createTab(opts) {
 
 function activate(id) {
   closeFind();
+  const previous = current();
+  if (previous && previous.id !== id) previous.lastActiveAt = Date.now();
   active = id;
   tabs.forEach((t) => t.wv.classList.toggle('hidden', t.id !== id));
   const tab = current();
-  if (tab && !tab.loaded) {
+  if (tab) tab.lastActiveAt = Date.now();
+  if (tab && (!tab.loaded || tab.suspended)) {
+    tab.suspended = false;
     tab.loaded = true;
     tab.wv.src = tab.url;
   }
@@ -152,6 +157,24 @@ function activate(id) {
   updateToolbar();
   scheduleSave();
 }
+
+setInterval(() => {
+  const minutes = Number(settings.suspendInactiveTabsMinutes) || 0;
+  if (!minutes) return;
+  const cutoff = Date.now() - minutes * 60 * 1000;
+  let changed = false;
+  tabs.forEach((tab) => {
+    if (tab.id === active || tab.pinned || tab.private || !tab.loaded || tab.suspended || tab.loading || internalName(tab.url)) return;
+    if (tab.lastActiveAt > cutoff || safe(() => tab.wv.isCurrentlyAudible(), false)) return;
+    const currentUrl = safe(() => tab.wv.getURL(), tab.url);
+    if (/^https?:/i.test(currentUrl)) tab.url = currentUrl;
+    tab.suspended = true;
+    tab.loaded = false;
+    tab.wv.src = 'about:blank';
+    changed = true;
+  });
+  if (changed) renderTabs();
+}, 60000);
 
 function closeTab(id) {
   const idx = tabs.findIndex((t) => t.id === id);
@@ -357,6 +380,8 @@ function mainMenu() {
     { label: 'Alejar', hint: 'Ctrl+-', run: run('zoom-out') },
     { label: 'Tamaño normal', hint: 'Ctrl+0', run: run('zoom-reset') },
     { label: 'Modo lectura', hint: 'Ctrl+Alt+R', run: run('reader') },
+    { label: 'Guardar página como PDF', hint: 'Ctrl+Shift+P', run: run('save-pdf') },
+    { label: 'Capturar página', hint: 'Ctrl+Shift+S', run: run('capture-page') },
     { label: 'Traducir página', hint: 'Ctrl+Alt+T', run: run('translate') },
     '-',
     { label: 'Herramientas de desarrollo', hint: 'F12', run: run('devtools') },
@@ -397,6 +422,15 @@ function zoom(delta) {
   t.zoom = delta === 0 ? 0 : Math.max(-3, Math.min(5, t.zoom + delta));
   safe(() => t.wv.setZoomLevel(t.zoom));
   toast('Zoom: ' + Math.round(Math.pow(1.2, t.zoom) * 100) + '%');
+}
+
+function saveActivePage(format) {
+  const tab = current();
+  if (!tab || internalName(tab.url) || !/^https?:/i.test(tab.url)) { toast('Abre una página web para guardarla.'); return; }
+  browserApi.exportPage(tab.wv.getWebContentsId(), format).then((result) => {
+    if (result && result.ok) toast(format === 'pdf' ? 'PDF guardado.' : 'Captura guardada.');
+    else if (result && !result.canceled) toast(result.message || 'No se pudo guardar.');
+  }).catch(() => toast('No se pudo guardar la página.'));
 }
 
 // Esta función se inyecta dentro de la página (por eso es autocontenida).
@@ -550,6 +584,8 @@ const commands = {
     if (!t || internalName(t.url)) return;
     safe(() => t.wv.executeJavaScript('(' + readerToggle.toString() + ')()'));
   },
+  'save-pdf': () => saveActivePage('pdf'),
+  'capture-page': () => saveActivePage('png'),
   translate: () => {
     const t = current();
     if (!t || !/^https?:\/\//i.test(t.url)) { toast('Esta página no se puede traducir.'); return; }

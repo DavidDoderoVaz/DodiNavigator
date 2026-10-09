@@ -12,8 +12,9 @@
 
   <h2>General</h2>
   <div class="card">
-    <div class="row"><label class="label" for="activeProfile">Perfil para pestañas nuevas<span class="hint">Cada perfil separa cookies e inicios de sesión. Los favoritos e historial siguen compartidos.</span></label>
+    <div class="row"><label class="label" for="activeProfile">Perfil para pestañas nuevas<span class="hint">Elige uno guardado o escribe otro nombre y pulsa Enter. Cada perfil separa cookies e inicios de sesión.</span></label>
       <input id="activeProfile" type="text" maxlength="24" placeholder="personal" autocomplete="off"></div>
+    <div id="profile-list" class="permission-list"></div>
     <div class="row"><label class="label" for="searchEngine">Buscador</label>
       <select id="searchEngine"><option value="duckduckgo">DuckDuckGo</option><option value="google">Google</option><option value="bing">Bing</option><option value="brave">Brave Search</option></select></div>
     <div class="row"><label class="label" for="homepage">Página de inicio<span class="hint">Vacío = página de nueva pestaña. Se abre con el botón Inicio.</span></label>
@@ -22,6 +23,14 @@
       <select id="translateTo"><option value="es">Español</option><option value="en">Inglés</option><option value="fr">Francés</option><option value="pt">Portugués</option><option value="de">Alemán</option><option value="it">Italiano</option></select></div>
     <div class="row"><label class="label" for="restoreSession">Restaurar pestañas al abrir el navegador</label>
       <input id="restoreSession" type="checkbox"></div>
+    <div class="row"><label class="label" for="suspendInactiveTabsMinutes">Poner pestañas inactivas en reposo<span class="hint">Al reabrirlas, se recargará la página; los formularios o cambios sin guardar se perderán.</span></label>
+      <select id="suspendInactiveTabsMinutes"><option value="0">Desactivado</option><option value="15">Después de 15 minutos</option><option value="30">Después de 30 minutos</option><option value="60">Después de 1 hora</option></select></div>
+  </div>
+
+  <h2>Actualizaciones</h2>
+  <div class="card">
+    <div class="row"><label class="label">Versión de DodiNavigator<span class="hint" id="update-status">Preparando el actualizador…</span></label>
+      <div><button class="btn" id="check-update">Buscar actualización</button> <button class="btn primary" id="download-update" hidden>Descargar</button> <button class="btn primary" id="install-update" hidden>Instalar y reiniciar</button></div></div>
   </div>
 
   <h2>Apariencia</h2>
@@ -39,6 +48,13 @@
       <button class="btn primary" id="add-extension">Añadir extensión</button>
     </div>
     <div id="extension-list" class="permission-list"></div>
+  </div>
+
+  <h2>Rendimiento por pestaña</h2>
+  <div class="card">
+    <div class="row"><label class="label">Memoria aproximada<span class="hint">Estimación del proceso Chromium de cada pestaña; varias pueden compartir proceso.</span></label>
+      <button class="btn" id="refresh-tab-memory">Actualizar</button></div>
+    <div id="tab-memory" class="permission-list"><p class="hint">Consultando pestañas abiertas…</p></div>
   </div>
 
   <h2>Privacidad</h2>
@@ -82,9 +98,11 @@
     if (!s) return;
     $('searchEngine').value = s.searchEngine;
     $('activeProfile').value = s.activeProfile || 'personal';
+    renderProfiles(s.profiles || ['personal'], s.activeProfile || 'personal');
     $('theme').value = s.theme;
     $('translateTo').value = s.translateTo;
     $('restoreSession').checked = !!s.restoreSession;
+    $('suspendInactiveTabsMinutes').value = String(s.suspendInactiveTabsMinutes || 0);
     $('clearOnExit').checked = !!s.clearOnExit;
     if (document.activeElement !== $('homepage')) $('homepage').value = s.homepage || '';
     $('adblock').checked = !!s.adblock;
@@ -100,11 +118,25 @@
   D.getSettings().then(fill);
   D.onSettings(fill);
 
+  function renderProfiles(profiles, active) {
+    var box = $('profile-list'); box.textContent = '';
+    profiles.forEach(function (name) {
+      var button = document.createElement('button');
+      button.className = 'btn' + (name === active ? ' primary' : '');
+      button.textContent = name;
+      button.addEventListener('click', function () { D.setSettings({ activeProfile: name }); });
+      box.appendChild(button);
+    });
+  }
+
   ['searchEngine', 'theme', 'translateTo'].forEach(function (id) {
     $(id).addEventListener('change', function (e) { var p = {}; p[id] = e.target.value; D.setSettings(p); });
   });
   ['restoreSession', 'adblock'].forEach(function (id) {
     $(id).addEventListener('change', function (e) { var p = {}; p[id] = e.target.checked; D.setSettings(p); });
+  });
+  $('suspendInactiveTabsMinutes').addEventListener('change', function (e) {
+    D.setSettings({ suspendInactiveTabsMinutes: Number(e.target.value) });
   });
   $('clearOnExit').addEventListener('change', function (e) { D.setSettings({ clearOnExit: e.target.checked }); });
   $('activeProfile').addEventListener('change', function (e) {
@@ -112,6 +144,7 @@
     if (!/^[a-z0-9][a-z0-9 _-]{0,23}$/i.test(value)) { note('Usa 1 a 24 letras, números, espacios o guiones.'); e.target.value = 'personal'; return; }
     D.setSettings({ activeProfile: value }); note('El perfil se aplicará a las pestañas nuevas.');
   });
+  $('activeProfile').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } });
   $('homepage').addEventListener('change', function (e) {
     var v = e.target.value.trim();
     if (v && !/^https?:\/\/\S+$/i.test(v)) { note('La página de inicio debe empezar con http:// o https://'); return; }
@@ -171,6 +204,35 @@
       .finally(function () { $('add-extension').disabled = false; });
   });
   loadExtensions();
+
+  function renderUpdateStatus(s) {
+    if (!s) return;
+    $('update-status').textContent = s.message || 'Estado desconocido.';
+    $('check-update').disabled = s.state === 'checking' || s.state === 'downloading';
+    $('download-update').hidden = s.state !== 'available';
+    $('install-update').hidden = s.state !== 'downloaded';
+  }
+  D.getUpdateStatus().then(renderUpdateStatus);
+  D.onUpdateStatus(renderUpdateStatus);
+  $('check-update').addEventListener('click', function () { D.checkUpdates().then(renderUpdateStatus); });
+  $('download-update').addEventListener('click', function () { D.downloadUpdate().then(renderUpdateStatus); });
+  $('install-update').addEventListener('click', function () { D.installUpdate(); });
+
+  function loadTabMemory() {
+    $('tab-memory').textContent = 'Consultando…';
+    D.getTabMemory().then(function (items) {
+      var box = $('tab-memory'); box.textContent = '';
+      if (!items || !items.length) { var empty = document.createElement('p'); empty.className = 'hint'; empty.textContent = 'No hay páginas web abiertas.'; box.appendChild(empty); return; }
+      items.forEach(function (item) {
+        var row = document.createElement('div'); row.className = 'permission-item';
+        var label = document.createElement('span'); label.textContent = item.title + ' · ' + item.url;
+        var value = document.createElement('strong'); value.textContent = item.memoryMiB.toLocaleString() + ' MB';
+        row.append(label, value); box.appendChild(row);
+      });
+    }).catch(function () { $('tab-memory').textContent = 'No se pudo leer el uso de memoria.'; });
+  }
+  $('refresh-tab-memory').addEventListener('click', loadTabMemory);
+  loadTabMemory();
 })();
 </script>
 </body>

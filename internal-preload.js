@@ -28,6 +28,12 @@ if (location.protocol === 'file:') {
     getExtensions: () => inv('extensions:get'),
     addExtension: () => inv('extensions:add'),
     removeExtension: (key) => inv('extensions:remove', key),
-    getStats: () => inv('stats:get')
+    getStats: () => inv('stats:get'),
+    getTabMemory: () => inv('stats:tabs'),
+    getUpdateStatus: () => inv('update:status'),
+    checkUpdates: () => inv('update:check'),
+    downloadUpdate: () => inv('update:download'),
+    installUpdate: () => inv('update:install'),
+    onUpdateStatus: (cb) => ipcRenderer.on('update:status', (_e, status) => cb(status))
   });
 }

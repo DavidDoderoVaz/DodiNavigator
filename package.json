@@ -1,9 +1,13 @@
 {
   "name": "dodinavigator",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "DodiNavigator - navegador web basado en Chromium",
   "main": "main.js",
   "author": "DavidDoderoVaz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DavidDoderoVaz/DodiNavigator.git"
+  },
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -21,6 +25,11 @@
   "build": {
     "appId": "com.dodi.navigator",
     "productName": "DodiNavigator",
+    "publish": {
+      "provider": "github",
+      "owner": "DavidDoderoVaz",
+      "repo": "DodiNavigator"
+    },
     "directories": {
       "output": "dist"
     },
@@ -54,5 +63,8 @@
   },
   "allowScripts": {
     "electron@33.4.11": true
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

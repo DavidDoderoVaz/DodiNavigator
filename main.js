@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, session, ipcMain, shell, dialog, clipboard } = require('electron');
+const { app, BrowserWindow, Menu, session, ipcMain, shell, dialog, clipboard, webContents } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -14,7 +14,8 @@ const ENGINES = {
 };
 const DEFAULT_SETTINGS = {
   searchEngine: 'duckduckgo', homepage: '', accent: '#3DDBB0', theme: 'dark',
-  adblock: true, restoreSession: true, translateTo: 'es', clearOnExit: false, activeProfile: 'personal', profiles: ['personal']
+  adblock: true, restoreSession: true, translateTo: 'es', clearOnExit: false,
+  suspendInactiveTabsMinutes: 0, activeProfile: 'personal', profiles: ['personal']
 };
 const DEFAULT_SHORTCUTS = [
   { title: 'Wikipedia', url: 'https://www.wikipedia.org/' },
@@ -32,6 +33,8 @@ let store = null;
 let historyStore = null;
 let blocker = null;
 let blockerError = '';
+let autoUpdater = null;
+let updateStatus = { state: 'checking', message: 'Todavía no se ha buscado una actualización.' };
 let downloads = [];
 let statsDate = '';
 let blockedRequestsToday = 0;
@@ -80,6 +83,7 @@ function sanitizeSettings(p) {
   if (typeof p.restoreSession === 'boolean') out.restoreSession = p.restoreSession;
   if (typeof p.translateTo === 'string' && /^[a-z]{2}(-[A-Za-z]{2,4})?$/.test(p.translateTo)) out.translateTo = p.translateTo;
   if (typeof p.clearOnExit === 'boolean') out.clearOnExit = p.clearOnExit;
+  if ([0, 15, 30, 60].includes(Number(p.suspendInactiveTabsMinutes))) out.suspendInactiveTabsMinutes = Number(p.suspendInactiveTabsMinutes);
   if (typeof p.activeProfile === 'string' && /^[a-z0-9][a-z0-9 _-]{0,23}$/i.test(p.activeProfile.trim())) out.activeProfile = p.activeProfile.trim();
   if (Array.isArray(p.profiles)) out.profiles = [...new Set(p.profiles.filter((x) => typeof x === 'string' && /^[a-z0-9][a-z0-9 _-]{0,23}$/i.test(x.trim())).map((x) => x.trim()))].slice(0, 20);
   return out;
@@ -514,6 +518,8 @@ function buildMenu() {
         it('Atrás', 'Alt+Left', 'back'),
         it('Adelante', 'Alt+Right', 'forward'),
         it('Inicio', 'Alt+Home', 'home'),
+        it('Guardar página como PDF', 'CmdOrCtrl+Shift+P', 'save-pdf'),
+        it('Capturar página', 'CmdOrCtrl+Shift+S', 'capture-page'),
         it('Pestaña siguiente', 'Ctrl+Tab', 'next-tab'),
         it('Pestaña anterior', 'Ctrl+Shift+Tab', 'prev-tab'),
         { type: 'separator' },
@@ -537,6 +543,31 @@ function buildMenu() {
     { role: 'editMenu' }
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+function setUpdateStatus(state, message, extra) {
+  updateStatus = { state, message, ...(extra || {}) };
+  broadcast('update:status', updateStatus);
+}
+function initializeUpdater() {
+  if (!app.isPackaged || process.env.PORTABLE_EXECUTABLE_DIR) {
+    setUpdateStatus('manual', 'El actualizador funciona en la versión instalada, no en npm start ni en la versión portable.');
+    return;
+  }
+  try {
+    ({ autoUpdater } = require('electron-updater'));
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on('checking-for-update', () => setUpdateStatus('checking', 'Buscando actualizaciones…'));
+    autoUpdater.on('update-available', (info) => setUpdateStatus('available', `Versión ${info.version} disponible.`, { version: info.version }));
+    autoUpdater.on('update-not-available', () => setUpdateStatus('current', 'DodiNavigator está actualizado.'));
+    autoUpdater.on('download-progress', (progress) => setUpdateStatus('downloading', `Descargando actualización: ${Math.round(progress.percent)}%`, { percent: Math.round(progress.percent) }));
+    autoUpdater.on('update-downloaded', (info) => setUpdateStatus('downloaded', `Versión ${info.version} lista para instalar.`, { version: info.version }));
+    autoUpdater.on('error', (error) => setUpdateStatus('error', error.message || 'No se pudo buscar la actualización.'));
+    setTimeout(() => { autoUpdater.checkForUpdates().catch((error) => setUpdateStatus('error', error.message || 'No se pudo buscar la actualización.')); }, 12000);
+  } catch (error) {
+    setUpdateStatus('error', error.message || 'No se pudo iniciar el actualizador.');
+  }
 }
 
 /* ---------- IPC ---------- */
@@ -566,6 +597,28 @@ ipcMain.handle('settings:set', async (e, patch) => {
   if ('adblock' in clean) applyAdblock();
   broadcast('settings', publicSettings());
   return publicSettings();
+});
+
+ipcMain.handle('update:status', (e) => (ok(e) ? updateStatus : null));
+ipcMain.handle('update:check', async (e) => {
+  if (!ok(e)) return null;
+  if (!autoUpdater) return updateStatus;
+  setUpdateStatus('checking', 'Buscando actualizaciones…');
+  try { await autoUpdater.checkForUpdates(); }
+  catch (error) { setUpdateStatus('error', error.message || 'No se pudo buscar la actualización.'); }
+  return updateStatus;
+});
+ipcMain.handle('update:download', async (e) => {
+  if (!ok(e) || !autoUpdater || updateStatus.state !== 'available') return updateStatus;
+  setUpdateStatus('downloading', 'Preparando descarga…', { percent: 0 });
+  try { await autoUpdater.downloadUpdate(); }
+  catch (error) { setUpdateStatus('error', error.message || 'No se pudo descargar la actualización.'); }
+  return updateStatus;
+});
+ipcMain.handle('update:install', (e) => {
+  if (!ok(e) || !autoUpdater || updateStatus.state !== 'downloaded') return false;
+  autoUpdater.quitAndInstall(false, true);
+  return true;
 });
 
 ipcMain.handle('shortcuts:get', (e) => (ok(e) ? (store.get('shortcuts') || DEFAULT_SHORTCUTS) : []));
@@ -681,6 +734,50 @@ ipcMain.handle('stats:get', (e) => {
     return { metricsError: message };
   }
 });
+
+function requestedGuestContents(e, id) {
+  if (!fromMain(e) || !Number.isInteger(id)) return null;
+  const contents = webContents.fromId(id);
+  return contents && contents.getType() === 'webview' && /^https?:/i.test(contents.getURL()) ? contents : null;
+}
+ipcMain.handle('page:export', async (e, id, format) => {
+  const contents = requestedGuestContents(e, id);
+  if (!contents || !['pdf', 'png'].includes(format)) return { ok: false, message: 'No se pudo guardar esta página.' };
+  const base = (contents.getTitle() || 'Página web').replace(/[<>:"/\\|?*\x00-\x1f]/g, '').trim().slice(0, 80) || 'Página web';
+  const pdf = format === 'pdf';
+  const picked = await dialog.showSaveDialog(win, {
+    title: pdf ? 'Guardar página como PDF' : 'Guardar captura de página',
+    defaultPath: path.join(app.getPath('downloads'), `${base}.${format}`),
+    filters: [{ name: pdf ? 'Documento PDF' : 'Imagen PNG', extensions: [format] }]
+  });
+  if (picked.canceled || !picked.filePath) return { ok: false, canceled: true };
+  try {
+    const data = pdf
+      ? await contents.printToPDF({ printBackground: true, pageSize: 'A4', preferCSSPageSize: true })
+      : (await contents.capturePage()).toPNG();
+    await fs.promises.writeFile(picked.filePath, data);
+    return { ok: true, path: picked.filePath };
+  } catch (error) {
+    return { ok: false, message: error.message || 'No se pudo guardar el archivo.' };
+  }
+});
+
+function tabMemoryStats() {
+  const memoryByPid = new Map(app.getAppMetrics().map((item) => [item.pid, item.memory && item.memory.workingSetSize || 0]));
+  return webContents.getAllWebContents()
+    .filter((contents) => contents.getType() === 'webview' && /^https?:/i.test(contents.getURL()))
+    .map((contents) => {
+      const pid = contents.getOSProcessId();
+      const privateTab = contents.session === session.fromPartition(PRIVATE_PARTITION);
+      return {
+        title: privateTab ? 'Pestaña privada' : (contents.getTitle() || contents.getURL()),
+        url: privateTab ? '' : contents.getURL(),
+        memoryMiB: Math.round((memoryByPid.get(pid) || 0) / 1024)
+      };
+    })
+    .sort((a, b) => b.memoryMiB - a.memoryMiB);
+}
+ipcMain.handle('stats:tabs', (e) => (ok(e) ? tabMemoryStats() : []));
 
 /* ---------- extensiones compatibles ---------- */
 
@@ -816,6 +913,7 @@ if (!app.requestSingleInstanceLock()) {
     await Promise.all(extensionSessions().map((ses) => loadConfiguredExtensions(ses)));
     buildMenu();
     createWindow();
+    initializeUpdater();
     initAdblock();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   });
