@@ -1,0 +1,54 @@
+# DodiNavigator 1.2
+
+Navegador web basado en Chromium (Electron).
+
+## Requisitos
+- Node.js 18 o superior (https://nodejs.org)
+
+## Probarlo
+```
+npm install
+npm start
+```
+
+## Crear el .exe (Windows)
+```
+npm run dist
+```
+En `dist/` aparecen el instalador (`DodiNavigator Setup 1.2.0.exe`) y la versión portable.
+Si falla con un error de "symbolic link / privilegios": abre la terminal como Administrador
+o activa el "Modo de desarrollador" de Windows, y repite.
+
+Para Mac o Linux: `npm run dist:mac` / `npm run dist:linux` (hay que ejecutarlos en ese sistema).
+
+## Qué incluye
+- Pestañas: arrastrar para reordenar, fijar, duplicar, reabrir cerradas, pestañas privadas (sin historial ni cookies guardadas)
+- Grupos con nombre y color: clic derecho en una pestaña para crear, cambiar o mover de grupo
+- Perfiles de navegación: separan cookies e inicios de sesión; favoritos e historial se comparten
+- Restaura las pestañas al abrir (se puede desactivar en Ajustes)
+- Barra de direcciones y buscador a elección (DuckDuckGo, Google, Bing, Brave)
+- Favoritos (barra + panel lateral) y bloc de notas en el panel lateral
+- Historial con búsqueda (dodi://history), Descargas con pausa y reanudación (dodi://downloads), Ajustes (dodi://settings)
+- Buscar en la página, zoom, modo lectura, traducir página
+- Bloqueador de anuncios y rastreadores (paquete opcional @ghostery/adblocker-electron)
+- Accesos directos editables en la nueva pestaña, tema claro/oscuro y color de acento
+- Menú contextual (clic derecho): abrir enlace en pestaña, copiar, guardar imagen, inspeccionar
+- Los permisos de cámara, micrófono, ubicación y notificaciones se piden y recuerdan por sitio; se pueden revocar en Ajustes
+- Opción para borrar historial, cookies, permisos y caché al cerrar
+- Aviso cuando se bloquea una conexión por un error de certificado; no permite saltarse la protección TLS
+
+## Atajos
+Ctrl+T nueva · Ctrl+Shift+N privada · Ctrl+Shift+T reabrir · Ctrl+W cerrar · Ctrl+L dirección
+Ctrl+F buscar · Ctrl++ / Ctrl+- / Ctrl+0 zoom · Ctrl+B panel lateral · Ctrl+H historial
+Ctrl+J descargas · Ctrl+, ajustes · Ctrl+Alt+R modo lectura · Ctrl+Alt+T traducir
+Alt+← / Alt+→ atrás/adelante · Alt+Inicio inicio · Ctrl+Tab cambiar pestaña · F12 herramientas
+
+## Datos
+Se guardan en la carpeta de datos del usuario (en Windows: %APPDATA%\dodinavigator):
+ajustes, favoritos, notas, historial y lista de descargas, en archivos JSON.
+
+## Bloqueador y actualizaciones
+Ghostery usa listas de filtros públicas para bloquear anuncios y rastreadores. Los sitios todavía pueden detectar que su contenido publicitario no se carga; no se incluyen técnicas para ocultar el bloqueador o evadir las comprobaciones de los sitios.
+
+La actualización automática requiere publicar versiones en un proveedor (por ejemplo, GitHub Releases) y configurar el repositorio. Falta definir ese destino antes de activar las actualizaciones en la aplicación.
+
