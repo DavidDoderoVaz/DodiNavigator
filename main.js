@@ -37,6 +37,12 @@ let blockedRequestsToday = 0;
 const liveItems = new Map();
 const subs = new Set();
 const initializedPartitions = new Set();
+const ghosteryIpcChannels = new Set([
+  '@ghostery/adblocker/inject-cosmetic-filters',
+  '@ghostery/adblocker/is-mutation-observer-enabled'
+]);
+const ghosteryIpcRegistrations = new Map();
+let ghosteryIpcCompatInstalled = false;
 
 /* ---------- almacenamiento en JSON (carpeta de datos del usuario) ---------- */
 
@@ -250,6 +256,7 @@ async function initAdblock() {
       read: fs.promises.readFile,
       write: fs.promises.writeFile
     });
+    shareGhosteryIpcHandlers();
     const onBeforeRequest = blocker.onBeforeRequest.bind(blocker);
     blocker.onBeforeRequest = (details, callback) => onBeforeRequest(details, (response) => {
       if (response && response.cancel) {
@@ -268,6 +275,38 @@ async function initAdblock() {
     console.error('[Dodi adblock] No se pudo iniciar el bloqueador:', blockerError);
     broadcast('settings', publicSettings());
   }
+}
+function shareGhosteryIpcHandlers() {
+  if (ghosteryIpcCompatInstalled) return;
+  ghosteryIpcCompatInstalled = true;
+  const register = ipcMain.handle.bind(ipcMain);
+  const remove = ipcMain.removeHandler.bind(ipcMain);
+  ipcMain.handle = (channel, listener) => {
+    if (!ghosteryIpcChannels.has(channel)) return register(channel, listener);
+    const count = ghosteryIpcRegistrations.get(channel) || 0;
+    if (count > 0) {
+      ghosteryIpcRegistrations.set(channel, count + 1);
+      return ipcMain;
+    }
+    try {
+      const result = register(channel, listener);
+      ghosteryIpcRegistrations.set(channel, 1);
+      return result;
+    } catch (error) {
+      ghosteryIpcRegistrations.delete(channel);
+      throw error;
+    }
+  };
+  ipcMain.removeHandler = (channel) => {
+    if (!ghosteryIpcChannels.has(channel)) return remove(channel);
+    const count = ghosteryIpcRegistrations.get(channel) || 0;
+    if (count > 1) {
+      ghosteryIpcRegistrations.set(channel, count - 1);
+      return;
+    }
+    ghosteryIpcRegistrations.delete(channel);
+    return remove(channel);
+  };
 }
 // Ghostery's current Electron wrapper expects APIs added in Electron 35.
 // Keep Electron 33 compatible by adapting its older preload-list methods.
