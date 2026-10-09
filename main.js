@@ -323,7 +323,7 @@ function browserStats() {
     cpuPercent: Math.round(cpuPercent),
     blockedRequestsToday,
     adblockAvailable: !!blocker,
-    adblockError,
+    adblockError: blockerError,
     adblockEnabled: !!blocker && !blockerError && !!settings().adblock
   };
 }

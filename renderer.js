@@ -99,7 +99,7 @@ function createTab(opts) {
   const partition = o.private ? 'dodi-private' : (profileSlug === 'personal' ? 'persist:dodi' : 'persist:dodi-profile-' + profileSlug);
   wv.setAttribute('partition', partition);
   wv.setAttribute('allowpopups', '');
-  const tab = { id, wv, url: o.url || pageUrl('newtab'), title: 'Nueva pestaña', favicon: null, loading: false, private: !!o.private, pinned: !!o.pinned, profile, group: o.group || '', zoom: 0 };
+  const tab = { id, wv, url: o.url || pageUrl('newtab'), title: 'Nueva pestaña', favicon: null, loading: false, loaded: !o.background, private: !!o.private, pinned: !!o.pinned, profile, group: o.group || '', zoom: 0 };
 
   wv.addEventListener('dom-ready', () => {
     if (tab.id === active && internalName(tab.url) === 'newtab') safe(() => wv.focus());
@@ -133,7 +133,7 @@ function createTab(opts) {
   tabs.push(tab);
   sortPinned();
   viewsEl.appendChild(wv);
-  wv.src = tab.url;
+  if (!o.background) wv.src = tab.url;
   if (o.background) renderTabs(); else activate(id);
   scheduleSave();
   return tab;
@@ -143,6 +143,11 @@ function activate(id) {
   closeFind();
   active = id;
   tabs.forEach((t) => t.wv.classList.toggle('hidden', t.id !== id));
+  const tab = current();
+  if (tab && !tab.loaded) {
+    tab.loaded = true;
+    tab.wv.src = tab.url;
+  }
   renderTabs();
   updateToolbar();
   scheduleSave();
