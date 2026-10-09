@@ -32,6 +32,15 @@
       <div class="swatches" role="group" aria-labelledby="accent-label" id="swatches"></div></div>
   </div>
 
+  <h2>Extensiones</h2>
+  <div class="card">
+    <div class="row">
+      <label class="label">Extensiones compatibles<span class="hint">Carga una carpeta con manifest.json. No se instalan directamente desde Chrome Web Store y algunas extensiones pueden no funcionar.</span></label>
+      <button class="btn primary" id="add-extension">Añadir extensión</button>
+    </div>
+    <div id="extension-list" class="permission-list"></div>
+  </div>
+
   <h2>Privacidad</h2>
   <div class="card">
     <div class="row"><label class="label" for="adblock">Bloquear anuncios y rastreadores<span class="hint" id="adblock-status"></span></label>
@@ -132,6 +141,34 @@
   function loadPermissions() { D.getPermissions().then(renderPermissions); }
   loadPermissions();
   confirmClear($('clear-permissions'), 'Borrar permisos', function () { D.clearPermissions().then(function () { loadPermissions(); note('Permisos guardados borrados.'); }); });
+
+  function renderExtensions(items) {
+    var box = $('extension-list'); box.textContent = '';
+    if (!items.length) { var empty = document.createElement('p'); empty.className = 'hint'; empty.textContent = 'Todavía no has añadido extensiones.'; box.appendChild(empty); return; }
+    items.forEach(function (item) {
+      var row = document.createElement('div'); row.className = 'permission-item';
+      var info = document.createElement('span'); info.textContent = item.name + ' · versión ' + item.version + ' · Manifest V' + item.manifestVersion;
+      var remove = document.createElement('button'); remove.className = 'btn danger'; remove.textContent = 'Quitar';
+      remove.addEventListener('click', function () {
+        D.removeExtension(item.key).then(function (result) {
+          if (result && result.ok) note('Extensión quitada.');
+          loadExtensions();
+        });
+      });
+      row.append(info, remove); box.appendChild(row);
+    });
+  }
+  function loadExtensions() { D.getExtensions().then(renderExtensions); }
+  $('add-extension').addEventListener('click', function () {
+    $('add-extension').disabled = true;
+    D.addExtension().then(function (result) {
+      if (result && result.ok) note('Extensión instalada.');
+      else if (result && result.message) note(result.message);
+      loadExtensions();
+    }).catch(function () { note('No se pudo añadir la extensión.'); })
+      .finally(function () { $('add-extension').disabled = false; });
+  });
+  loadExtensions();
 })();
 </script>
 </body>

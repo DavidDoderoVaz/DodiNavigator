@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, session, ipcMain, shell, dialog, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { fileURLToPath } = require('url');
 
 const PARTITION = 'persist:dodi';
@@ -397,13 +398,17 @@ ipcMain.on('subscribe', (e) => {
 });
 
 ipcMain.handle('settings:get', (e) => (ok(e) ? publicSettings() : null));
-ipcMain.handle('settings:set', (e, patch) => {
+ipcMain.handle('settings:set', async (e, patch) => {
   if (!ok(e) || !patch || typeof patch !== 'object') return publicSettings();
   const clean = sanitizeSettings(patch);
   if (clean.activeProfile) {
     clean.profiles = [...new Set([...(settings().profiles || ['personal']), clean.activeProfile])].slice(0, 20);
   }
   store.set('settings', { ...settings(), ...clean });
+  if (clean.activeProfile) {
+    const profileSession = setupProfileSession(profilePartition(clean.activeProfile));
+    await loadConfiguredExtensions(profileSession);
+  }
   if ('adblock' in clean) applyAdblock();
   broadcast('settings', publicSettings());
   return publicSettings();
@@ -513,6 +518,108 @@ ipcMain.handle('permissions:clear', (e) => {
   store.set('permissions', {});
 });
 
+/* ---------- extensiones compatibles ---------- */
+
+function extensionSessions() {
+  return [...initializedPartitions]
+    .filter((partition) => partition !== PRIVATE_PARTITION && partition.startsWith('persist:'))
+    .map((partition) => session.fromPartition(partition));
+}
+
+async function loadExtensionInSession(ses, extensionPath) {
+  const existing = ses.getAllExtensions().find((extension) => path.resolve(extension.path) === path.resolve(extensionPath));
+  if (existing) return existing;
+  return ses.loadExtension(extensionPath);
+}
+
+async function loadConfiguredExtensions(ses) {
+  if (!ses || !ses.isPersistent()) return;
+  for (const extension of store.get('extensions') || []) {
+    try { await loadExtensionInSession(ses, extension.path); }
+    catch (error) { console.warn(`No se pudo cargar la extensión ${extension.name}:`, error.message); }
+  }
+}
+
+ipcMain.handle('extensions:get', (e) => {
+  if (!ok(e)) return [];
+  return (store.get('extensions') || []).map(({ key, name, version, manifestVersion }) => ({ key, name, version, manifestVersion }));
+});
+
+ipcMain.handle('extensions:add', async (e) => {
+  if (!ok(e)) return { ok: false, message: 'Solicitud no válida.' };
+  const picked = await dialog.showOpenDialog(win, { title: 'Seleccionar carpeta de extensión', properties: ['openDirectory'] });
+  if (picked.canceled || !picked.filePaths[0]) return { ok: false, canceled: true };
+  const sourcePath = picked.filePaths[0];
+  let manifest;
+  try {
+    const manifestPath = path.join(sourcePath, 'manifest.json');
+    const stat = fs.statSync(manifestPath);
+    if (!stat.isFile() || stat.size > 1024 * 1024) throw new Error('manifest.json no válido.');
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (!manifest || ![2, 3].includes(manifest.manifest_version) || typeof manifest.name !== 'string' || typeof manifest.version !== 'string' ||
+        (manifest.permissions !== undefined && !Array.isArray(manifest.permissions)) ||
+        (manifest.host_permissions !== undefined && !Array.isArray(manifest.host_permissions))) {
+      throw new Error('La carpeta no contiene una extensión compatible.');
+    }
+  } catch (error) {
+    return { ok: false, message: error.message || 'No se pudo leer manifest.json.' };
+  }
+
+  const displayName = (manifest.name.startsWith('__MSG_') ? 'Extensión sin nombre traducido' : manifest.name).slice(0, 100);
+  const permissions = [...new Set([...(manifest.permissions || []), ...(manifest.host_permissions || [])])];
+  const permissionText = permissions.length ? permissions.slice(0, 18).join(', ') : 'No declara permisos explícitos.';
+  const approval = await dialog.showMessageBox(win, {
+    type: 'warning', buttons: ['Cancelar', 'Instalar'], defaultId: 0, cancelId: 0,
+    title: 'Confirmar extensión', message: `¿Instalar “${displayName}”?`,
+    detail: `Versión ${manifest.version} · Manifest V${manifest.manifest_version}\nPermisos solicitados: ${permissionText}${permissions.length > 18 ? ', …' : ''}\n\nLas extensiones pueden leer o modificar información de los sitios donde las habilites. Instala solo extensiones de confianza. Algunas funciones de Chrome no están disponibles en DodiNavigator.`
+  });
+  if (approval.response !== 1) return { ok: false, canceled: true };
+
+  const key = crypto.randomUUID();
+  const extensionsDir = path.join(app.getPath('userData'), 'extensions');
+  const targetPath = path.join(extensionsDir, key);
+  try {
+    fs.mkdirSync(extensionsDir, { recursive: true });
+    fs.cpSync(sourcePath, targetPath, { recursive: true, errorOnExist: true });
+    const records = store.get('extensions') || [];
+    const record = { key, name: displayName, version: manifest.version.slice(0, 32), manifestVersion: manifest.manifest_version, path: targetPath };
+    for (const ses of extensionSessions()) await loadExtensionInSession(ses, targetPath);
+    store.set('extensions', [...records, record]);
+    return { ok: true, extension: { key, name: record.name, version: record.version, manifestVersion: record.manifestVersion } };
+  } catch (error) {
+    for (const ses of extensionSessions()) {
+      try {
+        const loaded = ses.getAllExtensions().find((item) => path.resolve(item.path) === path.resolve(targetPath));
+        if (loaded) ses.removeExtension(loaded.id);
+      } catch (_) { /* ignorar limpieza parcial */ }
+    }
+    try { fs.rmSync(targetPath, { recursive: true, force: true }); } catch (_) { /* ignorar limpieza */ }
+    return { ok: false, message: error.message || 'No se pudo instalar la extensión.' };
+  }
+});
+
+ipcMain.handle('extensions:remove', async (e, key) => {
+  if (!ok(e) || typeof key !== 'string') return { ok: false };
+  const records = store.get('extensions') || [];
+  const extension = records.find((item) => item.key === key);
+  if (!extension) return { ok: false };
+  const approval = await dialog.showMessageBox(win, {
+    type: 'warning', buttons: ['Cancelar', 'Quitar'], defaultId: 0, cancelId: 0,
+    title: 'Quitar extensión', message: `¿Quitar “${extension.name}”?`
+  });
+  if (approval.response !== 1) return { ok: false, canceled: true };
+  for (const ses of extensionSessions()) {
+    try {
+      const loaded = ses.getAllExtensions().find((item) => path.resolve(item.path) === path.resolve(extension.path));
+      if (loaded) ses.removeExtension(loaded.id);
+    } catch (error) { console.warn(`No se pudo descargar ${extension.name}:`, error.message); }
+  }
+  store.set('extensions', records.filter((item) => item.key !== key));
+  try { fs.rmSync(extension.path, { recursive: true, force: true }); }
+  catch (error) { console.warn('No se pudo borrar la carpeta de la extensión:', error.message); }
+  return { ok: true };
+});
+
 ipcMain.handle('store:get', (e, k) => {
   if (!fromMain(e) || !UI_STORE_KEYS.includes(k)) return null;
   const v = store.get(k);
@@ -531,7 +638,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => {
     if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
   });
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     app.setAppUserModelId('com.dodi.navigator');
     store = makeStore('data.json', {});
     historyStore = makeStore('history.json', { items: [] });
@@ -539,6 +646,7 @@ if (!app.requestSingleInstanceLock()) {
     (settings().profiles || ['personal']).forEach((profile) => setupProfileSession(profilePartition(profile)));
     setupProfileSession(profilePartition(settings().activeProfile));
     setupProfileSession(PRIVATE_PARTITION);
+    await Promise.all(extensionSessions().map((ses) => loadConfiguredExtensions(ses)));
     buildMenu();
     createWindow();
     initAdblock();

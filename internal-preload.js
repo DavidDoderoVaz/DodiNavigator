@@ -24,6 +24,9 @@ if (location.protocol === 'file:') {
     clearData: (kind) => inv('data:clear', kind),
     getPermissions: () => inv('permissions:get'),
     revokePermission: (key) => inv('permissions:revoke', key),
-    clearPermissions: () => inv('permissions:clear')
+    clearPermissions: () => inv('permissions:clear'),
+    getExtensions: () => inv('extensions:get'),
+    addExtension: () => inv('extensions:add'),
+    removeExtension: (key) => inv('extensions:remove', key)
   });
 }

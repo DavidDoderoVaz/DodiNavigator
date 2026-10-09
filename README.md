@@ -34,6 +34,7 @@ Para Mac o Linux: `npm run dist:mac` / `npm run dist:linux` (hay que ejecutarlos
 - Accesos directos editables en la nueva pestaña, tema claro/oscuro y color de acento
 - Menú contextual (clic derecho): abrir enlace en pestaña, copiar, guardar imagen, inspeccionar
 - Los permisos de cámara, micrófono, ubicación y notificaciones se piden y recuerdan por sitio; se pueden revocar en Ajustes
+- Extensiones compatibles: se añaden desde Ajustes seleccionando una carpeta con `manifest.json`; se cargan en los perfiles persistentes
 - Opción para borrar historial, cookies, permisos y caché al cerrar
 - Aviso cuando se bloquea una conexión por un error de certificado; no permite saltarse la protección TLS
 
@@ -50,5 +51,7 @@ ajustes, favoritos, notas, historial y lista de descargas, en archivos JSON.
 ## Bloqueador y actualizaciones
 Ghostery usa listas de filtros públicas para bloquear anuncios y rastreadores. Los sitios todavía pueden detectar que su contenido publicitario no se carga; no se incluyen técnicas para ocultar el bloqueador o evadir las comprobaciones de los sitios.
 
-La actualización automática requiere publicar versiones en un proveedor (por ejemplo, GitHub Releases) y configurar el repositorio. Falta definir ese destino antes de activar las actualizaciones en la aplicación.
+El repositorio para actualizaciones ya está definido en GitHub. Falta integrar el actualizador y publicar versiones en GitHub Releases antes de que las instalaciones puedan actualizarse automáticamente.
+
+Electron admite solo una parte de las API de extensiones de Chrome. DodiNavigator carga extensiones desempaquetadas (carpetas), no instala `.crx` ni directamente desde Chrome Web Store; algunas extensiones y sus botones pueden no funcionar.
 
