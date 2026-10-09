@@ -89,9 +89,11 @@
     if (document.activeElement !== $('homepage')) $('homepage').value = s.homepage || '';
     $('adblock').checked = !!s.adblock;
     $('adblock').disabled = !s.adblockAvailable;
-    $('adblock-status').textContent = s.adblockAvailable
-      ? 'Activo en todas las pestañas.'
-      : 'No disponible todavía: necesita el paquete @ghostery/adblocker-electron (npm install) y conexión a internet la primera vez.';
+    $('adblock-status').textContent = s.adblockError
+      ? 'Error: ' + s.adblockError
+      : (!s.adblockAvailable
+        ? 'No disponible: necesita conexión para cargar la lista de filtros.'
+        : (s.adblock ? 'Activo en las pestañas.' : 'Desactivado. Actívalo para bloquear anuncios y rastreadores.'));
     picker.value = s.accent;
     document.querySelectorAll('.sw').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.color.toLowerCase() === s.accent.toLowerCase())); });
   }

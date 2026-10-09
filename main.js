@@ -30,6 +30,7 @@ let win = null;
 let store = null;
 let historyStore = null;
 let blocker = null;
+let blockerError = '';
 let downloads = [];
 let statsDate = '';
 let blockedRequestsToday = 0;
@@ -56,7 +57,7 @@ function makeStore(file, defaults) {
 const settings = () => ({ ...DEFAULT_SETTINGS, ...(store.get('settings') || {}) });
 const publicSettings = () => {
   const s = settings();
-  return { ...s, searchUrl: ENGINES[s.searchEngine] || ENGINES.duckduckgo, adblockAvailable: !!blocker };
+  return { ...s, searchUrl: ENGINES[s.searchEngine] || ENGINES.duckduckgo, adblockAvailable: !!blocker, adblockError: blockerError };
 };
 
 function sanitizeSettings(p) {
@@ -220,7 +221,10 @@ function setupProfileSession(partition) {
   setupPermissions(ses, partition);
   if (blocker) {
     try { if (settings().adblock) blocker.enableBlockingInSession(ses); }
-    catch (e) { console.warn('No se pudo activar el bloqueador:', e.message); }
+    catch (e) {
+      blockerError = e.message || 'No se pudo activar el filtro en este perfil.';
+      console.error('[Dodi adblock] No se pudo activar el filtro en una sesión:', blockerError);
+    }
   }
   return ses;
 }
@@ -259,18 +263,24 @@ async function initAdblock() {
     applyAdblock();
     broadcast('settings', publicSettings());
   } catch (e) {
-    console.warn('Bloqueador de anuncios no disponible:', e.message);
+    blocker = null;
+    blockerError = e.message || 'No se pudieron cargar las listas de filtros.';
+    console.error('[Dodi adblock] No se pudo iniciar el bloqueador:', blockerError);
+    broadcast('settings', publicSettings());
   }
 }
 function applyAdblock() {
   if (!blocker) return;
+  const errors = [];
   initializedPartitions.forEach((p) => {
     const ses = session.fromPartition(p);
     try {
       if (settings().adblock) blocker.enableBlockingInSession(ses);
       else blocker.disableBlockingInSession(ses);
-    } catch (e) { /* ignorar */ }
+    } catch (e) { errors.push(e.message || 'Error al aplicar el filtro.'); }
   });
+  blockerError = errors[0] || '';
+  if (blockerError) console.error('[Dodi adblock] No se pudo aplicar el filtro:', blockerError);
 }
 
 function localDateKey() {
@@ -287,7 +297,8 @@ function browserStats() {
     cpuPercent: Math.round(cpuPercent),
     blockedRequestsToday,
     adblockAvailable: !!blocker,
-    adblockEnabled: !!blocker && !!settings().adblock
+    adblockError,
+    adblockEnabled: !!blocker && !blockerError && !!settings().adblock
   };
 }
 
@@ -295,9 +306,14 @@ function browserStats() {
 
 function createWindow() {
   const iconPath = path.join(__dirname, 'build', 'icon.png');
+  const light = settings().theme === 'light';
   win = new BrowserWindow({
     width: 1360, height: 860, minWidth: 720, minHeight: 480,
     backgroundColor: '#0F1B1F', title: 'DodiNavigator', autoHideMenuBar: true,
+    ...(process.platform === 'win32' ? {
+      titleBarStyle: 'hidden',
+      titleBarOverlay: { color: light ? '#E3EAEB' : '#0B1417', symbolColor: light ? '#4A6368' : '#9DB3B7', height: 46 }
+    } : {}),
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -435,6 +451,10 @@ ipcMain.handle('settings:set', async (e, patch) => {
     clean.profiles = [...new Set([...(settings().profiles || ['personal']), clean.activeProfile])].slice(0, 20);
   }
   store.set('settings', { ...settings(), ...clean });
+  if ('theme' in clean && win && process.platform === 'win32') {
+    const light = clean.theme === 'light';
+    win.setTitleBarOverlay({ color: light ? '#E3EAEB' : '#0B1417', symbolColor: light ? '#4A6368' : '#9DB3B7', height: 46 });
+  }
   if (clean.activeProfile) {
     const profileSession = setupProfileSession(profilePartition(clean.activeProfile));
     await loadConfiguredExtensions(profileSession);

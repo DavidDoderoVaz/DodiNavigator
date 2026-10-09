@@ -128,15 +128,31 @@
   D.getShortcuts().then(function (r) { list = r; render(); });
 
   function updateStats() {
+    if (!D || typeof D.getStats !== 'function') {
+      $('memory-use').textContent = 'Reinicia';
+      $('cpu-use').textContent = 'Reinicia';
+      $('blocked-count').textContent = '—';
+      $('blocked-note').textContent = 'Cierra y vuelve a abrir DodiNavigator para cargar las métricas.';
+      return;
+    }
     D.getStats().then(function (stats) {
-      if (!stats) return;
+      if (!stats) {
+        $('memory-use').textContent = 'Error'; $('cpu-use').textContent = 'Error'; $('blocked-count').textContent = 'Error';
+        $('blocked-note').textContent = 'El proceso principal no respondió a las métricas.';
+        return;
+      }
       $('memory-use').textContent = stats.memoryMiB.toLocaleString() + ' MB';
       $('cpu-use').textContent = stats.cpuPercent.toLocaleString() + '%';
       $('blocked-count').textContent = stats.blockedRequestsToday.toLocaleString();
       $('blocked-note').textContent = !stats.adblockAvailable
-        ? 'El bloqueador no está disponible ahora'
-        : (!stats.adblockEnabled ? 'Bloqueador desactivado; se conserva el total de hoy' : 'Solicitudes bloqueadas por anuncios y rastreadores');
-    }).catch(function () {});
+        ? (stats.adblockError ? 'Bloqueador: ' + stats.adblockError : 'El bloqueador no está disponible ahora')
+        : (!stats.adblockEnabled ? 'Bloqueador desactivado o con error; total de hoy' : 'Solicitudes bloqueadas por anuncios y rastreadores');
+    }).catch(function () {
+      $('memory-use').textContent = 'Error';
+      $('cpu-use').textContent = 'Error';
+      $('blocked-count').textContent = 'Error';
+      $('blocked-note').textContent = 'No se pudieron leer las métricas.';
+    });
   }
   updateStats();
   setInterval(updateStats, 5000);

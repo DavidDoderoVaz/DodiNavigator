@@ -27,6 +27,7 @@ if (location.protocol === 'file:') {
     clearPermissions: () => inv('permissions:clear'),
     getExtensions: () => inv('extensions:get'),
     addExtension: () => inv('extensions:add'),
-    removeExtension: (key) => inv('extensions:remove', key)
+    removeExtension: (key) => inv('extensions:remove', key),
+    getStats: () => inv('stats:get')
   });
 }
