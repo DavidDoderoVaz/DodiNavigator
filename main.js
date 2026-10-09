@@ -25,6 +25,7 @@ const DEFAULT_SHORTCUTS = [
 ];
 const UI_STORE_KEYS = ['bookmarks', 'notes', 'session'];
 const RISKY_EXT = /\.(exe|msi|bat|cmd|com|scr|ps1|vbs|js|jse|wsf|lnk|jar|reg|hta)$/i;
+const ADBLOCK_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 let win = null;
 let store = null;
@@ -251,11 +252,7 @@ async function clearBrowsingData() {
 async function initAdblock() {
   try {
     const { ElectronBlocker } = require('@ghostery/adblocker-electron');
-    blocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, {
-      path: path.join(app.getPath('userData'), 'adblock-engine.bin'),
-      read: fs.promises.readFile,
-      write: fs.promises.writeFile
-    });
+    blocker = await loadAdblockEngine(ElectronBlocker);
     shareGhosteryIpcHandlers();
     const onBeforeRequest = blocker.onBeforeRequest.bind(blocker);
     blocker.onBeforeRequest = (details, callback) => onBeforeRequest(details, (response) => {
@@ -274,6 +271,40 @@ async function initAdblock() {
     blockerError = e.message || 'No se pudieron cargar las listas de filtros.';
     console.error('[Dodi adblock] No se pudo iniciar el bloqueador:', blockerError);
     broadcast('settings', publicSettings());
+  }
+}
+async function loadAdblockEngine(ElectronBlocker) {
+  const cachePath = path.join(app.getPath('userData'), 'adblock-engine.bin');
+  const stalePath = `${cachePath}.stale`;
+  const caching = { path: cachePath, read: fs.promises.readFile, write: fs.promises.writeFile };
+  let staleAvailable = false;
+
+  try {
+    const info = await fs.promises.stat(cachePath);
+    if (Date.now() - info.mtimeMs > ADBLOCK_CACHE_MAX_AGE_MS) {
+      await fs.promises.rm(stalePath, { force: true });
+      await fs.promises.rename(cachePath, stalePath);
+      staleAvailable = true;
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    try {
+      await fs.promises.copyFile(stalePath, cachePath);
+      staleAvailable = true;
+    } catch (staleError) {
+      if (staleError.code !== 'ENOENT') throw staleError;
+    }
+  }
+
+  try {
+    const engine = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, caching);
+    await fs.promises.rm(stalePath, { force: true });
+    return engine;
+  } catch (error) {
+    if (!staleAvailable) throw error;
+    await fs.promises.rm(cachePath, { force: true });
+    await fs.promises.rename(stalePath, cachePath);
+    return ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, caching);
   }
 }
 function shareGhosteryIpcHandlers() {
