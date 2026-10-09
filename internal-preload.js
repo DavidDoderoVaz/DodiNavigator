@@ -31,6 +31,8 @@ if (location.protocol === 'file:') {
     getStats: () => inv('stats:get'),
     getTabMemory: () => inv('stats:tabs'),
     getUpdateStatus: () => inv('update:status'),
+    exportConfig: () => inv('config:export'),
+    importConfig: () => inv('config:import'),
     checkUpdates: () => inv('update:check'),
     downloadUpdate: () => inv('update:download'),
     installUpdate: () => inv('update:install'),

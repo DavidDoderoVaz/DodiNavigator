@@ -15,7 +15,9 @@ const ENGINES = {
 const DEFAULT_SETTINGS = {
   searchEngine: 'duckduckgo', homepage: '', accent: '#3DDBB0', theme: 'dark',
   adblock: true, restoreSession: true, translateTo: 'es', clearOnExit: false,
-  suspendInactiveTabsMinutes: 0, activeProfile: 'personal', profiles: ['personal']
+  suspendInactiveTabsMinutes: 0, activeProfile: 'personal', profiles: ['personal'],
+  askDownloadLocation: false, startBackground: 'default', showStartDashboard: true,
+  keyBindings: { 'new-tab': 'CmdOrCtrl+T', 'tab-search': 'CmdOrCtrl+Shift+A', downloads: 'CmdOrCtrl+J', settings: 'CmdOrCtrl+,' }
 };
 const DEFAULT_SHORTCUTS = [
   { title: 'Wikipedia', url: 'https://www.wikipedia.org/' },
@@ -84,6 +86,18 @@ function sanitizeSettings(p) {
   if (typeof p.translateTo === 'string' && /^[a-z]{2}(-[A-Za-z]{2,4})?$/.test(p.translateTo)) out.translateTo = p.translateTo;
   if (typeof p.clearOnExit === 'boolean') out.clearOnExit = p.clearOnExit;
   if ([0, 15, 30, 60].includes(Number(p.suspendInactiveTabsMinutes))) out.suspendInactiveTabsMinutes = Number(p.suspendInactiveTabsMinutes);
+  if (typeof p.askDownloadLocation === 'boolean') out.askDownloadLocation = p.askDownloadLocation;
+  if (['default', 'aurora', 'ocean', 'sunset'].includes(p.startBackground)) out.startBackground = p.startBackground;
+  if (typeof p.showStartDashboard === 'boolean') out.showStartDashboard = p.showStartDashboard;
+  if (p.keyBindings && typeof p.keyBindings === 'object') {
+    const allowed = ['new-tab', 'tab-search', 'downloads', 'settings'];
+    const bindings = { ...DEFAULT_SETTINGS.keyBindings };
+    allowed.forEach((key) => {
+      const value = p.keyBindings[key];
+      if (typeof value === 'string' && /^(?:(?:CmdOrCtrl|Ctrl|Alt|Shift)\+){1,3}(?:[A-Z0-9,]|F(?:[1-9]|1[0-2]))$/.test(value)) bindings[key] = value;
+    });
+    out.keyBindings = bindings;
+  }
   if (typeof p.activeProfile === 'string' && /^[a-z0-9][a-z0-9 _-]{0,23}$/i.test(p.activeProfile.trim())) out.activeProfile = p.activeProfile.trim();
   if (Array.isArray(p.profiles)) out.profiles = [...new Set(p.profiles.filter((x) => typeof x === 'string' && /^[a-z0-9][a-z0-9 _-]{0,23}$/i.test(x.trim())).map((x) => x.trim()))].slice(0, 20);
   return out;
@@ -174,18 +188,24 @@ const persistDownloads = () => store.set('downloads', downloads.filter((d) => !l
 function setupDownloads(ses) {
   ses.on('will-download', (_e, item) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const savePath = uniquePath(app.getPath('downloads'), item.getFilename());
-    item.setSavePath(savePath);
+    const defaultPath = path.join(app.getPath('downloads'), item.getFilename());
+    if (settings().askDownloadLocation) item.setSaveDialogOptions({ title: 'Guardar descarga', defaultPath });
+    else item.setSavePath(uniquePath(app.getPath('downloads'), item.getFilename()));
+    const savePath = item.getSavePath() || defaultPath;
     const rec = { id, name: path.basename(savePath), url: item.getURL(), path: savePath, total: item.getTotalBytes(), received: 0, state: 'progressing', time: Date.now() };
     downloads.unshift(rec);
     liveItems.set(id, item);
     item.on('updated', (_ev, state) => {
+      rec.path = item.getSavePath() || rec.path;
+      rec.name = path.basename(rec.path);
       rec.received = item.getReceivedBytes();
       rec.total = item.getTotalBytes();
       rec.state = state === 'interrupted' ? 'interrupted' : (item.isPaused() ? 'paused' : 'progressing');
       pushDownloads(false);
     });
     item.once('done', (_ev, state) => {
+      rec.path = item.getSavePath() || rec.path;
+      rec.name = path.basename(rec.path);
       rec.state = state;
       rec.received = item.getReceivedBytes();
       liveItems.delete(id);
@@ -502,17 +522,19 @@ app.on('web-contents-created', (_e, contents) => {
 });
 
 function buildMenu() {
+  const bindings = settings().keyBindings || DEFAULT_SETTINGS.keyBindings;
   const it = (label, accelerator, cmd, arg) => ({ label, accelerator, click: () => send(cmd, arg) });
   const template = [
     {
       label: 'Navegador',
       submenu: [
-        it('Nueva pestaña', 'CmdOrCtrl+T', 'new-tab'),
+        it('Nueva pestaña', bindings['new-tab'], 'new-tab'),
         it('Nueva pestaña privada', 'CmdOrCtrl+Shift+N', 'new-private-tab'),
         it('Reabrir pestaña cerrada', 'CmdOrCtrl+Shift+T', 'reopen-tab'),
         it('Cerrar pestaña', 'CmdOrCtrl+W', 'close-tab'),
         it('Ir a la barra de direcciones', 'CmdOrCtrl+L', 'focus-address'),
         it('Buscar en la página', 'CmdOrCtrl+F', 'find'),
+        it('Buscar pestañas', bindings['tab-search'], 'tab-search'),
         it('Recargar', 'CmdOrCtrl+R', 'reload'),
         { ...it('Recargar (F5)', 'F5', 'reload'), visible: false },
         it('Atrás', 'Alt+Left', 'back'),
@@ -531,8 +553,8 @@ function buildMenu() {
         { type: 'separator' },
         it('Favoritos y notas', 'CmdOrCtrl+B', 'side'),
         it('Historial', 'CmdOrCtrl+H', 'history'),
-        it('Descargas', 'CmdOrCtrl+J', 'downloads'),
-        it('Ajustes', 'CmdOrCtrl+,', 'settings'),
+        it('Descargas', bindings.downloads, 'downloads'),
+        it('Ajustes', bindings.settings, 'settings'),
         it('Modo lectura', 'CmdOrCtrl+Alt+R', 'reader'),
         it('Traducir página', 'CmdOrCtrl+Alt+T', 'translate'),
         it('Herramientas de desarrollo', 'F12', 'devtools'),
@@ -559,7 +581,10 @@ function initializeUpdater() {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.on('checking-for-update', () => setUpdateStatus('checking', 'Buscando actualizaciones…'));
-    autoUpdater.on('update-available', (info) => setUpdateStatus('available', `Versión ${info.version} disponible.`, { version: info.version }));
+    autoUpdater.on('update-available', (info) => {
+      setUpdateStatus('available', `Versión ${info.version} disponible.`, { version: info.version });
+      send('update-available', info.version);
+    });
     autoUpdater.on('update-not-available', () => setUpdateStatus('current', 'DodiNavigator está actualizado.'));
     autoUpdater.on('download-progress', (progress) => setUpdateStatus('downloading', `Descargando actualización: ${Math.round(progress.percent)}%`, { percent: Math.round(progress.percent) }));
     autoUpdater.on('update-downloaded', (info) => setUpdateStatus('downloaded', `Versión ${info.version} lista para instalar.`, { version: info.version }));
@@ -586,6 +611,7 @@ ipcMain.handle('settings:set', async (e, patch) => {
     clean.profiles = [...new Set([...(settings().profiles || ['personal']), clean.activeProfile])].slice(0, 20);
   }
   store.set('settings', { ...settings(), ...clean });
+  if ('keyBindings' in clean) buildMenu();
   if ('theme' in clean && win && process.platform === 'win32') {
     const light = clean.theme === 'light';
     win.setTitleBarOverlay({ color: light ? '#F2ECFA' : '#0B1417', symbolColor: light ? '#5F5367' : '#9DB3B7', height: 52 });
@@ -889,6 +915,59 @@ ipcMain.handle('store:get', (e, k) => {
 ipcMain.handle('store:set', (e, k, v) => {
   if (!fromMain(e) || !UI_STORE_KEYS.includes(k)) return;
   store.set(k, v);
+});
+
+ipcMain.handle('config:export', async (e) => {
+  if (!ok(e)) return { ok: false };
+  const picked = await dialog.showSaveDialog(win, {
+    title: 'Exportar configuración de DodiNavigator',
+    defaultPath: path.join(app.getPath('documents'), 'DodiNavigator-config.json'),
+    filters: [{ name: 'Configuración JSON', extensions: ['json'] }]
+  });
+  if (picked.canceled || !picked.filePath) return { ok: false, canceled: true };
+  const data = {
+    format: 'DodiNavigator', version: 1, settings: settings(),
+    shortcuts: store.get('shortcuts') || DEFAULT_SHORTCUTS,
+    bookmarks: store.get('bookmarks') || [], notes: store.get('notes') || ''
+  };
+  try { await fs.promises.writeFile(picked.filePath, JSON.stringify(data, null, 2), 'utf8'); return { ok: true }; }
+  catch (error) { return { ok: false, message: error.message || 'No se pudo exportar.' }; }
+});
+
+ipcMain.handle('config:import', async (e) => {
+  if (!ok(e)) return { ok: false };
+  const picked = await dialog.showOpenDialog(win, {
+    title: 'Importar configuración de DodiNavigator', properties: ['openFile'],
+    filters: [{ name: 'Configuración JSON', extensions: ['json'] }]
+  });
+  if (picked.canceled || !picked.filePaths[0]) return { ok: false, canceled: true };
+  try {
+    const file = picked.filePaths[0];
+    const stat = await fs.promises.stat(file);
+    if (stat.size > 5 * 1024 * 1024) return { ok: false, message: 'El archivo de configuración es demasiado grande.' };
+    const data = JSON.parse(await fs.promises.readFile(file, 'utf8'));
+    if (!data || data.format !== 'DodiNavigator' || !data.settings || typeof data.settings !== 'object') {
+      return { ok: false, message: 'El archivo no parece una configuración de DodiNavigator.' };
+    }
+    const clean = sanitizeSettings(data.settings);
+    store.set('settings', { ...settings(), ...clean });
+    if (Array.isArray(data.shortcuts)) store.set('shortcuts', sanitizeShortcuts(data.shortcuts));
+    if (Array.isArray(data.bookmarks)) {
+      const bookmarks = data.bookmarks.slice(0, 500).flatMap((item) => {
+        try {
+          const url = new URL(String(item.url));
+          if (!['http:', 'https:'].includes(url.protocol)) return [];
+          return [{ title: String(item.title || url.hostname).slice(0, 200), url: url.href }];
+        } catch { return []; }
+      });
+      store.set('bookmarks', bookmarks);
+    }
+    if (typeof data.notes === 'string') store.set('notes', data.notes.slice(0, 50000));
+    buildMenu();
+    if (clean.adblock !== undefined) applyAdblock();
+    broadcast('settings', publicSettings());
+    return { ok: true };
+  } catch (error) { return { ok: false, message: error.message || 'No se pudo importar el archivo.' }; }
 });
 
 /* ---------- arranque ---------- */

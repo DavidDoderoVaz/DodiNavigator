@@ -25,6 +25,22 @@
       <input id="restoreSession" type="checkbox"></div>
     <div class="row"><label class="label" for="suspendInactiveTabsMinutes">Poner pestañas inactivas en reposo<span class="hint">Al reabrirlas, se recargará la página; los formularios o cambios sin guardar se perderán.</span></label>
       <select id="suspendInactiveTabsMinutes"><option value="0">Desactivado</option><option value="15">Después de 15 minutos</option><option value="30">Después de 30 minutos</option><option value="60">Después de 1 hora</option></select></div>
+    <div class="row"><label class="label" for="askDownloadLocation">Preguntar dónde guardar cada descarga</label><input id="askDownloadLocation" type="checkbox"></div>
+  </div>
+
+  <h2>Atajos de teclado</h2>
+  <div class="card">
+    <div class="row"><label class="label" for="key-new-tab">Nueva pestaña</label><input class="key-binding" id="key-new-tab" readonly placeholder="Pulsa una combinación"></div>
+    <div class="row"><label class="label" for="key-tab-search">Buscar pestañas</label><input class="key-binding" id="key-tab-search" readonly placeholder="Pulsa una combinación"></div>
+    <div class="row"><label class="label" for="key-downloads">Descargas</label><input class="key-binding" id="key-downloads" readonly placeholder="Pulsa una combinación"></div>
+    <div class="row"><label class="label" for="key-settings">Ajustes</label><input class="key-binding" id="key-settings" readonly placeholder="Pulsa una combinación"></div>
+    <p class="hint">Haz clic en un campo y pulsa Ctrl, Alt o Shift junto con una tecla.</p>
+  </div>
+
+  <h2>Importar y exportar</h2>
+  <div class="card">
+    <div class="row"><span class="label">Ajustes, accesos directos, favoritos y notas<span class="hint">No incluye contraseñas, cookies ni sesiones de sitios web.</span></span>
+      <div><button class="btn" id="import-config">Importar</button> <button class="btn" id="export-config">Exportar</button></div></div>
   </div>
 
   <h2>Actualizaciones</h2>
@@ -39,6 +55,9 @@
       <select id="theme"><option value="dark">Oscuro</option><option value="light">Claro</option></select></div>
     <div class="row"><span class="label" id="accent-label">Color de acento</span>
       <div class="swatches" role="group" aria-labelledby="accent-label" id="swatches"></div></div>
+    <div class="row"><label class="label" for="startBackground">Fondo de nueva pestaña</label>
+      <select id="startBackground"><option value="default">Color del tema</option><option value="aurora">Aurora verde</option><option value="ocean">Océano</option><option value="sunset">Atardecer</option></select></div>
+    <div class="row"><label class="label" for="showStartDashboard">Mostrar paneles de memoria y protección</label><input id="showStartDashboard" type="checkbox"></div>
   </div>
 
   <h2>Extensiones</h2>
@@ -52,7 +71,7 @@
 
   <h2>Rendimiento por pestaña</h2>
   <div class="card">
-    <div class="row"><label class="label">Memoria aproximada<span class="hint">Estimación del proceso Chromium de cada pestaña; varias pueden compartir proceso.</span></label>
+    <div class="row"><label class="label">Memoria aproximada<span class="hint">Ordenadas de mayor a menor. La lista se actualiza automáticamente cada 20 segundos; varias pestañas pueden compartir un proceso.</span></label>
       <button class="btn" id="refresh-tab-memory">Actualizar</button></div>
     <div id="tab-memory" class="permission-list"><p class="hint">Consultando pestañas abiertas…</p></div>
   </div>
@@ -103,6 +122,10 @@
     $('translateTo').value = s.translateTo;
     $('restoreSession').checked = !!s.restoreSession;
     $('suspendInactiveTabsMinutes').value = String(s.suspendInactiveTabsMinutes || 0);
+    $('askDownloadLocation').checked = !!s.askDownloadLocation;
+    $('startBackground').value = s.startBackground || 'default';
+    $('showStartDashboard').checked = s.showStartDashboard !== false;
+    showKeyBindings(s);
     $('clearOnExit').checked = !!s.clearOnExit;
     if (document.activeElement !== $('homepage')) $('homepage').value = s.homepage || '';
     $('adblock').checked = !!s.adblock;
@@ -135,6 +158,10 @@
   ['restoreSession', 'adblock'].forEach(function (id) {
     $(id).addEventListener('change', function (e) { var p = {}; p[id] = e.target.checked; D.setSettings(p); });
   });
+  ['askDownloadLocation', 'showStartDashboard'].forEach(function (id) {
+    $(id).addEventListener('change', function (e) { var p = {}; p[id] = e.target.checked; D.setSettings(p); });
+  });
+  $('startBackground').addEventListener('change', function (e) { D.setSettings({ startBackground: e.target.value }); });
   $('suspendInactiveTabsMinutes').addEventListener('change', function (e) {
     D.setSettings({ suspendInactiveTabsMinutes: Number(e.target.value) });
   });
@@ -149,6 +176,48 @@
     var v = e.target.value.trim();
     if (v && !/^https?:\/\/\S+$/i.test(v)) { note('La página de inicio debe empezar con http:// o https://'); return; }
     D.setSettings({ homepage: v }); note('Guardado.');
+  });
+
+  var currentSettings = {};
+  function showKeyBindings(s) {
+    currentSettings = s || currentSettings;
+    var keys = currentSettings.keyBindings || {};
+    ['new-tab', 'tab-search', 'downloads', 'settings'].forEach(function (key) {
+      var input = $('key-' + key);
+      if (document.activeElement !== input) input.value = (keys[key] || '').replace('CmdOrCtrl', 'Ctrl');
+    });
+  }
+  document.querySelectorAll('.key-binding').forEach(function (input) {
+    input.addEventListener('focus', function () { input.placeholder = 'Ahora pulsa la combinación…'; });
+    input.addEventListener('blur', function () { input.placeholder = 'Pulsa una combinación'; });
+    input.addEventListener('keydown', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      if (e.key === 'Escape') { input.blur(); return; }
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) { note('Incluye Ctrl, Alt o Shift.'); return; }
+      var key = e.key.toUpperCase();
+      if (!/^[A-Z0-9,]$/.test(key) && !/^F(?:[1-9]|1[0-2])$/.test(key)) return;
+      var parts = [];
+      if (e.ctrlKey || e.metaKey) parts.push('CmdOrCtrl');
+      if (e.altKey) parts.push('Alt');
+      if (e.shiftKey) parts.push('Shift');
+      parts.push(key);
+      var value = parts.join('+');
+      var id = input.id.slice(4);
+      var bindings = Object.assign({}, currentSettings.keyBindings || {}); bindings[id] = value;
+      var normalized = function (shortcut) { return shortcut.replace('CmdOrCtrl', 'Ctrl').toUpperCase(); };
+      if (Object.keys(bindings).some(function (other) { return other !== id && normalized(bindings[other]) === normalized(value); })) {
+        note('Ese atajo ya está asignado a otra función.'); return;
+      }
+      input.value = value.replace('CmdOrCtrl', 'Ctrl');
+      D.setSettings({ keyBindings: bindings }).then(function (s) { currentSettings = s || currentSettings; note('Atajo guardado.'); });
+      input.blur();
+    });
+  });
+  $('export-config').addEventListener('click', function () {
+    D.exportConfig().then(function (r) { if (r && r.ok) note('Configuración exportada.'); else if (r && r.message) note(r.message); });
+  });
+  $('import-config').addEventListener('click', function () {
+    D.importConfig().then(function (r) { if (r && r.ok) { note('Configuración importada.'); location.reload(); } else if (r && r.message) note(r.message); });
   });
 
   function confirmClear(btn, label, fn) {
@@ -233,6 +302,7 @@
   }
   $('refresh-tab-memory').addEventListener('click', loadTabMemory);
   loadTabMemory();
+  setInterval(loadTabMemory, 20000);
 })();
 </script>
 </body>

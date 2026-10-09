@@ -8,6 +8,12 @@
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 32px; padding: 32px; background: var(--bg); color: var(--text); font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif; }
+  body[data-background="aurora"] { background: radial-gradient(ellipse at 25% 20%, #16443b, transparent 55%), linear-gradient(135deg, #0b171a, #142b32); }
+  body[data-background="ocean"] { background: radial-gradient(ellipse at 80% 15%, #17638a, transparent 58%), linear-gradient(135deg, #081722, #102d43); }
+  body[data-background="sunset"] { background: radial-gradient(ellipse at 70% 15%, #a84c43, transparent 55%), linear-gradient(135deg, #22151e, #492b3a); }
+  :root[data-theme="light"] body[data-background="aurora"] { background: radial-gradient(ellipse at 25% 20%, #a7ded1, transparent 55%), linear-gradient(135deg, #e6f4f0, #dce9eb); }
+  :root[data-theme="light"] body[data-background="ocean"] { background: radial-gradient(ellipse at 80% 15%, #a6d8ed, transparent 58%), linear-gradient(135deg, #e8f4fa, #d6eaf5); }
+  :root[data-theme="light"] body[data-background="sunset"] { background: radial-gradient(ellipse at 70% 15%, #f4b7a8, transparent 55%), linear-gradient(135deg, #fff0e7, #f2dce6); }
   h1 { margin: 0; font-size: 72px; letter-spacing: -2px; color: var(--accent-ink); text-align: center; }
   p.sub { margin: 8px 0 0; color: var(--muted); font-size: 18px; text-align: center; }
   form.search { width: min(640px, 100%); }
@@ -156,6 +162,13 @@
       $('blocked-note').textContent = 'No se pudieron consultar las métricas. Cierra y vuelve a abrir DodiNavigator.';
     });
   }
+  function applyAppearance(s) {
+    if (!s) return;
+    document.body.dataset.background = s.startBackground || 'default';
+    document.querySelector('.dashboard').hidden = s.showStartDashboard === false;
+  }
+  D.getSettings().then(applyAppearance);
+  D.onSettings(applyAppearance);
   updateStats();
   setInterval(updateStats, 15000);
 })();

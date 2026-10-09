@@ -421,6 +421,45 @@ function closeFind() {
   const t = current();
   if (t) safe(() => t.wv.stopFindInPage('clearSelection'));
 }
+
+const tabPicker = $('tab-picker');
+const tabPickerInput = $('tab-picker-input');
+const tabPickerResults = $('tab-picker-results');
+let tabPickerSelection = 0;
+function renderTabPicker() {
+  const query = tabPickerInput.value.trim().toLocaleLowerCase();
+  const matches = tabs.filter((tab) => !query || (tab.title + ' ' + tab.url).toLocaleLowerCase().includes(query)).slice(0, 80);
+  tabPickerSelection = Math.min(tabPickerSelection, Math.max(0, matches.length - 1));
+  tabPickerResults.textContent = '';
+  if (!matches.length) {
+    const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = 'No se encontraron pestañas.';
+    tabPickerResults.appendChild(empty); return;
+  }
+  matches.forEach((tab, index) => {
+    const row = document.createElement('button'); row.type = 'button'; row.className = 'tab-result' + (index === tabPickerSelection ? ' selected' : '');
+    row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(index === tabPickerSelection));
+    const title = document.createElement('span'); title.className = 'result-title'; title.textContent = tab.title || 'Nueva pestaña';
+    const url = document.createElement('span'); url.className = 'result-url'; url.textContent = tab.url;
+    row.append(title, url);
+    row.addEventListener('click', () => { closeTabPicker(); activate(tab.id); });
+    tabPickerResults.appendChild(row);
+  });
+}
+function openTabSearch() {
+  tabPicker.hidden = false; tabPickerInput.value = ''; tabPickerSelection = 0;
+  renderTabPicker(); tabPickerInput.focus();
+}
+function closeTabPicker() { tabPicker.hidden = true; }
+tabPickerInput.addEventListener('input', () => { tabPickerSelection = 0; renderTabPicker(); });
+tabPickerInput.addEventListener('keydown', (event) => {
+  const count = tabPickerResults.querySelectorAll('.tab-result').length;
+  if (event.key === 'Escape') { event.preventDefault(); closeTabPicker(); }
+  else if (event.key === 'ArrowDown' && count) { event.preventDefault(); tabPickerSelection = (tabPickerSelection + 1) % count; renderTabPicker(); }
+  else if (event.key === 'ArrowUp' && count) { event.preventDefault(); tabPickerSelection = (tabPickerSelection - 1 + count) % count; renderTabPicker(); }
+  else if (event.key === 'Enter' && count) { event.preventDefault(); tabPickerResults.querySelectorAll('.tab-result')[tabPickerSelection].click(); }
+});
+tabPicker.addEventListener('mousedown', (event) => event.stopPropagation());
+document.addEventListener('mousedown', (event) => { if (!tabPicker.hidden && !tabPicker.contains(event.target)) closeTabPicker(); });
 function doFind(forward, newSession) {
   const t = current();
   if (!t) return;
@@ -593,6 +632,7 @@ const commands = {
   'next-tab': () => cycleTab(1),
   'prev-tab': () => cycleTab(-1),
   find: openFind,
+  'tab-search': openTabSearch,
   'zoom-in': () => zoom(0.5),
   'zoom-out': () => zoom(-0.5),
   'zoom-reset': () => zoom(0),
@@ -612,7 +652,8 @@ const commands = {
     const t = current();
     if (!t || !/^https?:\/\//i.test(t.url)) { toast('Esta página no se puede traducir.'); return; }
     navigate('https://translate.google.com/translate?sl=auto&tl=' + encodeURIComponent(settings.translateTo || 'es') + '&u=' + encodeURIComponent(t.url));
-  }
+  },
+  'update-available': (version) => toast('Hay una actualización nueva (' + version + '). Revisa Ajustes > Actualizaciones.')
 };
 browserApi.onCommand((cmd, arg) => { const f = commands[cmd]; if (f) f(arg); });
 
