@@ -38,6 +38,7 @@ button { font-family: inherit; cursor: pointer; }
 .tab.pinned .title, .tab.pinned .close { display: none; }
 #newtab { width: 40px; height: 40px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; flex: none; -webkit-app-region: no-drag; }
 #newtab:hover { background: color-mix(in srgb, var(--tabstrip) 80%, var(--bar)); color: var(--text); }
+#drag-region { flex: 0 1 120px; min-width: 24px; height: 100%; -webkit-app-region: drag; }
 @keyframes pulse { 50% { opacity: .3; } }
 
 #toolbar { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: var(--bar); flex: none; }

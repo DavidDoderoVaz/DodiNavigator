@@ -479,7 +479,6 @@ function createWindow(initialUrl = null, independent = false) {
   browserWindow.loadFile('index.html', independent ? { query: { independent: '1', ...(initialUrl && /^https?:\/\//i.test(initialUrl) ? { open: initialUrl } : {}) } } : undefined);
   browserWindow.on('closed', () => {
     mainWindows.delete(browserWindow);
-    readyWindows.delete(browserWindow.webContents);
     if (win === browserWindow) win = Array.from(mainWindows).find((candidate) => !candidate.isDestroyed()) || null;
   });
   return browserWindow;
