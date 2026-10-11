@@ -43,7 +43,16 @@ Var DodiOpenDefaultSettings
   !define MUI_PAGE_CUSTOMFUNCTION_LEAVE DodiFinishPageLeave
   !define MUI_FINISHPAGE_TITLE "Instalación completada"
   !define MUI_FINISHPAGE_TEXT "DodiNavigator se instaló correctamente."
-  !define MUI_FINISHPAGE_RUN "$launchLink"
+  Function DodiStartApp
+    ${if} ${isUpdated}
+      StrCpy $1 "--updated"
+    ${else}
+      StrCpy $1 ""
+    ${endif}
+    ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" "$1"
+  FunctionEnd
+  !define MUI_FINISHPAGE_RUN
+  !define MUI_FINISHPAGE_RUN_FUNCTION "DodiStartApp"
   !define MUI_FINISHPAGE_RUN_TEXT "Iniciar DodiNavigator"
   !insertmacro MUI_PAGE_FINISH
 !macroend

@@ -1,6 +1,6 @@
 {
   "name": "dodinavigator",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "description": "DodiNavigator - navegador web basado en Chromium",
   "main": "main.js",
   "author": "DavidDoderoVaz",
