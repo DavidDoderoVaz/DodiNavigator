@@ -1,6 +1,6 @@
 {
   "name": "dodinavigator",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "DodiNavigator - navegador web basado en Chromium",
   "main": "main.js",
   "author": "DavidDoderoVaz",
@@ -29,7 +29,8 @@
     "publish": {
       "provider": "github",
       "owner": "DavidDoderoVaz",
-      "repo": "DodiNavigator"
+      "repo": "DodiNavigator",
+      "releaseType": "release"
     },
     "directories": {
       "output": "dist"
