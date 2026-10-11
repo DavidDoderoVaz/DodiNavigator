@@ -1,6 +1,6 @@
 {
   "name": "dodinavigator",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "DodiNavigator - navegador web basado en Chromium",
   "main": "main.js",
   "author": "DavidDoderoVaz",
@@ -12,6 +12,7 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win",
+    "dist:portable": "electron-builder --win portable",
     "dist:mac": "electron-builder --mac",
     "dist:linux": "electron-builder --linux"
   },
@@ -40,14 +41,16 @@
       "!*.zip"
     ],
     "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ]
+      "icon": "build/icon.ico",
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "runAfterFinish": true
     },
     "mac": {
       "target": "dmg",

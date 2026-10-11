@@ -2,6 +2,8 @@
 
 const $ = (id) => document.getElementById(id);
 const browserApi = window.api;
+const independentWindow = new URLSearchParams(location.search).get('independent') === '1';
+const initialWindowUrl = new URLSearchParams(location.search).get('open') || '';
 const BASE = new URL('./', location.href).href;
 const PAGES = { newtab: 'newtab.html', history: 'history.html', downloads: 'downloads.html', settings: 'settings.html' };
 const ALIASES = { history: 'history', historial: 'history', downloads: 'downloads', descargas: 'downloads', settings: 'settings', ajustes: 'settings' };
@@ -140,7 +142,10 @@ function createTab(opts) {
   sortPinned();
   viewsEl.appendChild(wv);
   if (!o.background) wv.src = tab.url;
-  if (o.background) renderTabs(); else activate(id);
+  if (o.openInBackground) {
+    wv.classList.add('hidden');
+    renderTabs();
+  } else if (o.background) renderTabs(); else activate(id);
   scheduleSave();
   return tab;
 }
@@ -323,6 +328,7 @@ function workspaceTabsSnapshot() {
   return { tabs: list, active: activeTab ? candidates.findIndex((tab) => tab.id === activeTab.id) : -1 };
 }
 function saveSession() {
+  if (independentWindow) return;
   const list = tabs.filter((t) => !t.private && internalName(t.url) !== 'newtab').map((t) => ({ url: t.url, pinned: t.pinned, profile: t.profile, group: t.group }));
   const cur = current();
   const idx = cur && !cur.private ? list.findIndex((x) => x.url === cur.url) : -1;
@@ -409,6 +415,7 @@ menuEl.addEventListener('keydown', (e) => {
 function mainMenu() {
   const run = (c) => () => commands[c]();
   return [
+    { label: 'Nueva ventana', hint: 'Ctrl+N', run: () => browserApi.openNewWindow() },
     { label: 'Nueva pestaña', hint: 'Ctrl+T', run: run('new-tab') },
     { label: 'Nueva pestaña privada', hint: 'Ctrl+Shift+N', run: run('new-private-tab') },
     '-',
@@ -743,83 +750,10 @@ $('workspace-form').addEventListener('submit', (event) => {
 $('workspace-save').addEventListener('click', () => { saveSession(); toast('Pestañas guardadas en este espacio.'); });
 document.querySelectorAll('.seg').forEach((button) => button.addEventListener('click', () => selectSidePane(button.dataset.pane, false)));
 $('assistantbtn').addEventListener('click', () => selectSidePane('assistant'));
+$('assistant-extension').addEventListener('click', () => browserApi.openChatGPTExtension());
 let notesTimer;
 notesEl.addEventListener('input', () => { clearTimeout(notesTimer); notesTimer = setTimeout(() => browserApi.storeSet('notes', notesEl.value), 500); });
-document.querySelectorAll('.seg').forEach((b) => b.addEventListener('click', () => {
-  document.querySelectorAll('.seg').forEach((x) => { const on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-selected', String(on)); });
-  $('pane-fav').hidden = b.dataset.pane !== 'fav';
-  $('pane-notes').hidden = b.dataset.pane !== 'notes';
-  if (b.dataset.pane === 'notes') notesEl.focus();
-}));
-let notesTimer;
-notesEl.addEventListener('input', () => { clearTimeout(notesTimer); notesTimer = setTimeout(() => browserApi.storeSet('notes', notesEl.value), 500); });
-
-let assistantHistory = [];
-let assistantReady = false;
-function addAssistantMessage(text, kind) {
-  const bubble = document.createElement('div'); bubble.className = 'assistant-message' + (kind ? ' ' + kind : '');
-  bubble.textContent = text;
-  $('assistant-chat').appendChild(bubble);
-  $('assistant-chat').scrollTop = $('assistant-chat').scrollHeight;
-  return bubble;
-}
-async function refreshAssistantStatus() {
-  $('assistant-status').textContent = 'Comprobando IA local…';
-  $('assistant-refresh').disabled = true;
-  try {
-    const status = await browserApi.assistantStatus();
-    assistantReady = !!(status && status.available && status.installed);
-    $('assistant-status').textContent = status && status.message || 'No se pudo consultar el asistente.';
-    $('assistant-setup').hidden = assistantReady;
-    $('assistant-setup').innerHTML = status && status.available
-      ? `Para habilitarlo, descarga el modelo desde <a href="https://ollama.com/library/qwen2.5:1.5b-instruct" target="_blank" rel="noreferrer">Ollama</a> (aprox. 986 MB) y ejecuta <code>ollama run qwen2.5:1.5b-instruct</code>. Las respuestas se procesan en tu equipo.`
-      : `Instala y abre <a href="https://ollama.com/download" target="_blank" rel="noreferrer">Ollama</a>. Después ejecuta <code>ollama run qwen2.5:1.5b-instruct</code> para descargar el modelo. Las respuestas se procesan en tu equipo.`;
-    $('assistant-question').disabled = !assistantReady;
-    $('assistant-send').disabled = !assistantReady;
-    document.querySelectorAll('.assistant-quick button').forEach((button) => { button.disabled = !assistantReady; });
-  } catch {
-    assistantReady = false;
-    $('assistant-status').textContent = 'No se pudo consultar la IA local.';
-    $('assistant-setup').hidden = false;
-    $('assistant-setup').textContent = 'Abre Ollama y pulsa Revisar para conectarlo.';
-    $('assistant-question').disabled = true; $('assistant-send').disabled = true;
-  } finally { $('assistant-refresh').disabled = false; }
-}
-async function askAssistant(question) {
-  const text = String(question || '').trim().slice(0, 2000);
-  if (!text) { $('assistant-question').focus(); return; }
-  if (!assistantReady) { addAssistantMessage('Primero instala y abre Ollama, y descarga el modelo que aparece arriba.', 'error'); return; }
-  $('assistant-question').value = '';
-  addAssistantMessage(text, 'user');
-  const contextRequested = $('assistant-page-context').checked;
-  let pageText = '';
-  if (contextRequested) {
-    const tab = current();
-    if (tab && /^https?:\/\//i.test(tab.url)) {
-      try { pageText = await tab.wv.executeJavaScript('document.body ? document.body.innerText.slice(0, 10000) : ""'); }
-      catch { addAssistantMessage('No pude leer el contenido de esa página. Puedes copiar el texto en tu pregunta.', 'error'); return; }
-    } else { addAssistantMessage('Abre una página web para compartir su texto con el asistente.', 'error'); return; }
-  }
-  const pending = addAssistantMessage('Pensando…');
-  $('assistant-send').disabled = true;
-  try {
-    const result = await browserApi.assistantAsk({ question: text, history: assistantHistory.slice(-8), pageText });
-    pending.remove();
-    if (!result || !result.ok) { addAssistantMessage(result && result.message || 'No se pudo obtener respuesta.', 'error'); return; }
-    addAssistantMessage(result.answer, 'assistant');
-    assistantHistory.push({ role: 'user', content: text }, { role: 'assistant', content: result.answer });
-    if (assistantHistory.length > 16) assistantHistory = assistantHistory.slice(-16);
-  } catch {
-    pending.remove(); addAssistantMessage('No se pudo conectar con Ollama. Comprueba que siga abierto.', 'error');
-  } finally { $('assistant-send').disabled = !assistantReady; }
-}
-$('assistant-refresh').addEventListener('click', refreshAssistantStatus);
-$('assistant-form').addEventListener('submit', (event) => { event.preventDefault(); askAssistant($('assistant-question').value); });
-document.querySelectorAll('.assistant-quick button').forEach((button) => button.addEventListener('click', () => {
-  if (button.dataset.needsPage === 'true') $('assistant-page-context').checked = true;
-  askAssistant(button.dataset.assistantPrompt);
-}));
-refreshAssistantStatus();
+$('assistant-open').addEventListener('click', () => browserApi.openChatGPT());
 
 /* ---------- comandos (menú, atajos y botones) ---------- */
 
@@ -827,7 +761,7 @@ const commands = {
   'new-tab': () => createTab(),
   'new-private-tab': () => createTab({ private: true }),
   'reopen-tab': () => { const c = closed.pop(); if (c) createTab(c); },
-  'open-url': (a) => { if (a && /^https?:\/\//i.test(a.url)) createTab({ url: a.url, private: !!a.private }); },
+  'open-url': (a) => { if (a && /^https?:\/\//i.test(a.url)) createTab({ url: a.url, private: !!a.private, openInBackground: !!a.background }); },
   'close-tab': () => { const t = current(); if (t) closeTab(t.id); },
   'focus-address': () => addr.focus(),
   reload: () => { const t = current(); if (t) safe(() => t.wv.reload()); },
@@ -899,13 +833,14 @@ browserApi.onCommand((cmd, arg) => { const f = commands[cmd]; if (f) f(arg); });
   });
 
   let restored = false;
-  const savedWorkspaceTabs = settings.restoreSession && activeWorkspace && Array.isArray(activeWorkspace.tabs) ? activeWorkspace.tabs : [];
+  const savedWorkspaceTabs = !independentWindow && settings.restoreSession && activeWorkspace && Array.isArray(activeWorkspace.tabs) ? activeWorkspace.tabs : [];
   if (savedWorkspaceTabs.length) {
     savedWorkspaceTabs.forEach((item) => createTab({ url: item.url, pinned: !!item.pinned, profile: activeWorkspace.profile, group: item.group, background: true }));
     activate(tabs[Math.min(activeWorkspace.active || 0, tabs.length - 1)].id); restored = true;
-  } else if (!Array.isArray(savedWorkspaces) && settings.restoreSession && session && Array.isArray(session.tabs) && session.tabs.length) {
+  } else if (!independentWindow && !Array.isArray(savedWorkspaces) && settings.restoreSession && session && Array.isArray(session.tabs) && session.tabs.length) {
     session.tabs.filter((item) => item && allowedUrl(item.url)).forEach((item) => createTab({ url: item.url, pinned: !!item.pinned, profile: item.profile, group: item.group, background: true }));
     if (tabs.length) { activate((tabs[session.active] || tabs[tabs.length - 1]).id); restored = true; }
   }
-  if (!restored) createTab();
+  if (!restored) createTab(initialWindowUrl && /^https?:\/\//i.test(initialWindowUrl) ? { url: initialWindowUrl } : undefined);
+  await browserApi.installerReady();
 })();

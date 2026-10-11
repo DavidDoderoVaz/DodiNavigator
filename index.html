@@ -44,7 +44,7 @@
       <button class="seg active" data-pane="fav" role="tab" aria-selected="true">Favoritos</button>
       <button class="seg" data-pane="notes" role="tab" aria-selected="false">Notas</button>
       <button class="seg" data-pane="workspaces" role="tab" aria-selected="false">Espacios</button>
-      <button class="seg" data-pane="assistant" role="tab" aria-selected="false">Ayuda IA</button>
+      <button class="seg" data-pane="assistant" role="tab" aria-selected="false">ChatGPT</button>
       <button id="side-close" class="icon sm" data-icon="close" aria-label="Cerrar panel"></button>
     </div>
     <div id="pane-fav" class="pane">
@@ -65,15 +65,10 @@
       <div id="workspace-list"></div>
     </div>
     <div id="pane-assistant" class="pane" hidden>
-      <div class="assistant-heading"><div><strong>Dodi Ayuda</strong><span id="assistant-status" class="hint">Comprobando IA local…</span></div><button id="assistant-refresh" class="btn">Revisar</button></div>
-      <div id="assistant-setup" class="assistant-setup" hidden></div>
-      <div class="assistant-quick"><button type="button" data-assistant-prompt="Resume esta página en cinco puntos claros." data-needs-page="true">Resumir página</button><button type="button" data-assistant-prompt="Explícame esta página con palabras sencillas." data-needs-page="true">Explicar página</button></div>
-      <div id="assistant-chat" aria-live="polite"></div>
-      <form id="assistant-form">
-        <label class="assistant-context"><input type="checkbox" id="assistant-page-context"> Incluir texto de la pestaña actual</label>
-        <textarea id="assistant-question" rows="3" maxlength="2000" placeholder="Pregunta algo o pide un resumen…" aria-label="Pregunta para Dodi Ayuda"></textarea>
-        <button id="assistant-send" class="btn primary" type="submit">Enviar</button>
-      </form>
+      <h2>ChatGPT</h2>
+      <p class="muted">Abre ChatGPT en tu navegador predeterminado. Inicia sesión con tu cuenta; hay una opción gratuita con límites de uso.</p>
+      <button id="assistant-open" class="btn primary">Abrir ChatGPT</button>
+      <div class="assistant-setup"><strong>Extensión oficial</strong><p>La extensión oficial se ofrece para Chrome y otros navegadores compatibles. DodiNavigator no puede instalarla directamente desde Chrome Web Store.</p><button id="assistant-extension" class="btn">Ver extensión oficial</button></div>
     </div>
   </aside>
 </div>
