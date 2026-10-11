@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS = {
   searchEngine: 'duckduckgo', homepage: '', accent: '#3DDBB0', theme: 'dark',
   adblock: true, restoreSession: true, translateTo: 'es', clearOnExit: false,
   suspendInactiveTabsMinutes: 0, activeProfile: 'personal', profiles: ['personal'],
-  askDownloadLocation: false, startBackground: 'default', showStartDashboard: true,
+  askDownloadLocation: true, startBackground: 'default', showStartDashboard: true,
   keyBindings: { 'new-tab': 'CmdOrCtrl+T', 'tab-search': 'CmdOrCtrl+Shift+A', downloads: 'CmdOrCtrl+J', settings: 'CmdOrCtrl+,' }
 };
 const DEFAULT_SHORTCUTS = [
@@ -1038,6 +1038,13 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.dodi.navigator');
     store = makeStore('data.json', {});
+    if (store.get('downloadLocationPromptMigration') !== 1) {
+      const savedSettings = store.get('settings') || {};
+      if (savedSettings.askDownloadLocation !== true) {
+        store.set('settings', { ...savedSettings, askDownloadLocation: true });
+      }
+      store.set('downloadLocationPromptMigration', 1);
+    }
     historyStore = makeStore('history.json', { items: [] });
     const savedStats = store.get('browserStats') || {};
     statsDate = localDateKey();
