@@ -14,7 +14,7 @@ button { font-family: inherit; cursor: pointer; }
 #workspace-select { width: 140px; height: 34px; flex: none; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bar); color: var(--text); font: inherit; font-size: 13px; -webkit-app-region: no-drag; }
 .tabbar-action { width: 32px; height: 32px; flex: none; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 9px; background: transparent; color: var(--muted); -webkit-app-region: no-drag; }
 .tabbar-action:hover { background: var(--raised); color: var(--text); }
-#tabs { display: flex; align-items: center; gap: 7px; flex: 1 1 0; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--line) transparent; -webkit-app-region: no-drag; }
+#tabs { display: flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--line) transparent; -webkit-app-region: no-drag; }
 #tabs::-webkit-scrollbar { height: 4px; }
 #tabs::-webkit-scrollbar-track { background: transparent; }
 #tabs::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
@@ -38,7 +38,7 @@ button { font-family: inherit; cursor: pointer; }
 .tab.pinned .title, .tab.pinned .close { display: none; }
 #newtab { width: 40px; height: 40px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; flex: none; -webkit-app-region: no-drag; }
 #newtab:hover { background: color-mix(in srgb, var(--tabstrip) 80%, var(--bar)); color: var(--text); }
-#drag-region { flex: 0 1 120px; min-width: 24px; height: 100%; -webkit-app-region: drag; }
+#drag-region { flex: 1 1 120px; min-width: 24px; height: 100%; -webkit-app-region: drag; }
 @keyframes pulse { 50% { opacity: .3; } }
 
 #toolbar { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: var(--bar); flex: none; }
